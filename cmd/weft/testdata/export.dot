@@ -1,0 +1,14 @@
+digraph weft {
+  rankdir=LR;
+  node [shape=box, style="rounded,filled", fillcolor=white, fontname="Helvetica"];
+  edge [fontname="Helvetica", fontsize=10];
+
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" [label="aaaaaaa\nN+1 in report generation", tooltip="bug · acme/api", URL="https://github.com/acme/api/issues/412", target="_blank"];
+  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" [label="bbbbbbb\nthe \"batch export\" spec\\draft", tooltip="spec · acme/api", URL="https://github.com/acme/api/pull/77", target="_blank", fillcolor="#e8f5e9", color="#66bb6a"];
+  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" [label="ccccccc\nreview point Z", tooltip="finding · other/fork", style="rounded,dashed", fontcolor="#999999", color="#cccccc"];
+
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -> "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" [label="conflicts-with", dir=none, style=dashed, color="#ef6c00"];
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -> "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" [label="depends-on", color="#c62828"];
+  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" -> "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" [label="depends-on", color="#c62828"];
+  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" -> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" [label="part-of", style=dotted, color="#5c6bc0"];
+}

@@ -1,0 +1,10 @@
+
+  depends on
+    bbbbbbb  spec  batch export spec
+    fffffff  (not in this store)
+
+  blocks
+    ccccccc  finding  review point Z  (done)
+
+  conflicts with
+    bbbbbbb  spec  batch export spec

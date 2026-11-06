@@ -1,0 +1,92 @@
+{
+  "nodes": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ns": "acme/api",
+      "kind": "bug",
+      "title": "N+1 in report generation",
+      "state": "open",
+      "refs": [
+        "gh:acme/api#412"
+      ],
+      "created": "2026-07-30T09:15:00Z",
+      "touched": "2026-08-04T17:40:30Z",
+      "claims": [
+        {
+          "holder": "claude:one",
+          "by": "agent:ws",
+          "source": "asserted",
+          "note": "canonical",
+          "at": "2026-08-01T09:40:00Z",
+          "expires": "2026-08-01T19:00:00Z"
+        }
+      ],
+      "released_claims": [
+        {
+          "holder": "claude:one",
+          "by": "agent:ws",
+          "source": "asserted",
+          "note": "canonical",
+          "at": "2026-08-01T09:00:00Z",
+          "expires": "2026-08-01T19:00:00Z",
+          "released_at": "2026-08-01T09:30:00Z",
+          "released_by": "agent:ws",
+          "released_source": "observed"
+        },
+        {
+          "holder": "claude:two",
+          "by": "agent:ws",
+          "source": "asserted",
+          "note": "ancillary",
+          "at": "2026-08-01T09:05:00Z",
+          "expires": "2026-08-01T19:00:00Z",
+          "released_at": "2026-08-01T09:20:00Z",
+          "released_by": "agent:ws",
+          "released_source": "observed"
+        }
+      ]
+    },
+    {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ns": "acme/api",
+      "kind": "spec",
+      "title": "the \"batch export\" spec\\draft",
+      "state": "done",
+      "refs": [
+        "file:docs/export.md",
+        "pr:acme/api#77"
+      ],
+      "created": "2026-07-30T09:15:00Z",
+      "touched": "2026-07-30T09:15:00Z"
+    },
+    {
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "ns": "other/fork",
+      "kind": "finding",
+      "title": "review point Z",
+      "state": "dropped"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "conflicts-with",
+      "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "to": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "kind": "depends-on",
+      "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "to": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "kind": "depends-on",
+      "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "to": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "kind": "part-of",
+      "from": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "to": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

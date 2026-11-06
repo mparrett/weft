@@ -1,0 +1,14 @@
+aaaaaaa  bug  N+1 in report generation
+  ns     acme/api
+  state  open
+  source inferred, per agent:scanner
+  age    created 30d ago, touched 3h ago
+bbbbbbb  spec  batch export spec
+  ns     acme/api
+  state  open
+  age    created 2d ago
+  refs   file:docs/export.md
+         gh:acme/api#412
+ccccccc  finding  review point Z
+  ns     acme/api
+  state  done

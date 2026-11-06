@@ -1,0 +1,19 @@
+{
+  "nodes": 1,
+  "edges": 0,
+  "error": "",
+  "states": {
+    "3333333333333333333333333333333333333333333333333333333333333333": "open"
+  },
+  "observed": [
+    {
+      "node": "3333333333333333333333333333333333333333333333333333333333333333",
+      "ref": "file:notes.md",
+      "state": "",
+      "title": "",
+      "created": "2026-08-20T10:59:00Z",
+      "modified": "2026-05-02T09:00:00Z",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

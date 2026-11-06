@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>weft — getting started</title>
+<!--
+  Self-contained on purpose: no CDN, no build step, no fonts fetched at open
+  time. Open it from a checkout, from a file:// URL, or from a share — it reads
+  the same everywhere, for the same reason the viewer does (BUILD.md §1.1).
+
+  Every command shown here was run against a real store and its output pasted
+  back. `cmd/weft/gettingstarted_test.go` re-runs each one, so an example that
+  stops working fails the suite rather than misleading a reader.
+-->
+<style>
+  :root{
+    --bg:#fbfbfa; --card:#fff; --card2:#f4f4f2; --ink:#1c1c1a; --muted:#5f5f5a;
+    --faint:#8a8a83; --line:#e2e2dd; --accent:#3b5bdb; --ok:#2f7a3f; --ok-bg:#e8f5e9;
+    --block:#c62828; --code:#f6f6f4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#151513; --card:#1d1d1b; --card2:#232320; --ink:#eceae4; --muted:#a5a49c;
+      --faint:#77766e; --line:#33332e; --accent:#8da2fb; --ok:#7bc98a; --ok-bg:#1e2f22;
+      --block:#f28b82; --code:#1a1a18;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 96px;}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:34px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em;}
+  .sub{color:var(--muted);margin:0;}
+  h2{font-size:19px;margin:44px 0 10px;letter-spacing:-.01em;}
+  h2 .n{display:inline-block;min-width:26px;color:var(--faint);font-variant-numeric:tabular-nums;}
+  p{margin:0 0 14px;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+       background:var(--code);padding:1px 5px;border-radius:4px;border:1px solid var(--line);}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+      padding:14px 16px;overflow-x:auto;margin:0 0 16px;}
+  pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.6;}
+  .cmd{color:var(--accent);font-weight:600;}
+  .out{color:var(--muted);}
+  .note{border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:0 0 16px;
+        color:var(--muted);font-size:14px;}
+  .note strong{color:var(--ink);}
+  .why{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+       padding:14px 16px;margin:0 0 16px;font-size:14px;}
+  .why b{color:var(--ink);}
+  a{color:var(--accent);}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:13px;}
+  ul{margin:0 0 14px;padding-left:20px;} li{margin-bottom:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>weft, in ten minutes</h1>
+  <p class="sub">A durable graph of claims about work — what you are blocked on, what is
+  blocked on you, and who is already on it.</p>
+</header>
+
+<p>Every command below was run in order against an empty store, and the output is
+what it actually printed. Node ids are content hashes, so yours will differ —
+weft resolves any unambiguous prefix, which is why seven characters is enough to
+paste around.</p>
+
+<h2><span class="n">0.</span> Build it</h2>
+<pre><code><span class="cmd">$ make</span>
+<span class="cmd">$ make install</span>          <span class="out"># to ~/.local/bin</span></code></pre>
+<div class="note"><strong>Build through the Makefile, not <code>go build</code>.</strong>
+The version is stamped through <code>-ldflags</code>, so a hand-rolled binary reports
+<code>0.0.0-dev</code> and stops answering the first question you ask when something
+surprises you.</div>
+
+<h2><span class="n">1.</span> Find out where you are</h2>
+<p>Before writing anything, ask which store you are about to change. This is the
+only command that answers it, and it creates nothing.</p>
+<pre><code><span class="cmd">$ weft env</span>
+<span class="out">version   0.1.0
+store     /Users/you/.weft            (default)
+log       /Users/you/.weft/log.jsonl  (not written yet)
+actor     user:you                    (git config user.email)
+ns        acme/api                    (git remote)</span></code></pre>
+<div class="why"><b>Why it names the rule, not just the value.</b> The same path means
+different things depending on how it was chosen — <code>$WEFT_HOME</code> set in one
+shell follows you into the next repo. <code>weft env</code> also names any
+<code>WEFT_*</code> variable you have set that weft does not read, because a
+plausible-looking variable that does nothing is indistinguishable from one that
+works until you read the log.</div>
+
+<h2><span class="n">2.</span> Assert that work exists</h2>
+<p>A node says a unit of work exists. Most nodes have no issue tracking them and
+never will — that is the point.</p>
+<pre><code><span class="cmd">$ weft add "N+1 in report generation" --kind bug --ref gh:acme/api#412</span>
+<span class="out">f46bc2b  N+1 in report generation  [acme/api]</span>
+
+<span class="cmd">$ weft add "cache invalidation race" --kind bug --source inferred</span>
+<span class="out">7f9341e  cache invalidation race  [acme/api]</span>
+
+<span class="cmd">$ weft add "batch export spec" --kind spec --ref file:docs/export.md</span>
+<span class="out">ca75891  batch export spec  [acme/api]</span>
+
+<span class="cmd">$ weft add "task 7: batch export" --kind task</span>
+<span class="out">b8723f9  task 7: batch export  [acme/api]</span></code></pre>
+<div class="why"><b><code>--source</code> is doing real work here.</b> The second bug was
+inferred by an agent, not reported by anyone. Roughly half a real graph is
+inference, and a graph that cannot separate observed from guessed stops being
+trusted. Values are <code>asserted</code> (default), <code>observed</code>, and
+<code>inferred</code>.</div>
+<div class="note"><strong>Nodes are append-only — there is no edit.</strong> Get
+<code>--kind</code> right at <code>add</code> time; fixing it means <code>drop</code>
+and re-<code>add</code>, which loses the node's edges. Refs are not in that trap:
+<code>weft ref add</code> and <code>weft ref rm</code> work on a node that already exists.</div>
+
+<h2><span class="n">3.</span> Connect them</h2>
+<pre><code><span class="cmd">$ weft link b8723f9 depends-on ca75891</span>
+<span class="out">b8723f9 depends-on ca75891</span></code></pre>
+<p>Six edge kinds: <code>depends-on</code>, <code>conflicts-with</code>,
+<code>part-of</code>, <code>derived-from</code>, <code>supersedes</code>,
+<code>same-as</code>. Only <code>depends-on</code> must stay acyclic —
+<code>conflicts-with</code> is symmetric and cyclic by nature.</p>
+
+<h2><span class="n">4.</span> Ask what you can actually start</h2>
+<pre><code><span class="cmd">$ weft ls</span>
+<span class="out">f46bc2b  bug   N+1 in report generation
+7f9341e  bug   cache invalidation race
+ca75891  spec  batch export spec
+b8723f9  task  task 7: batch export</span>
+
+<span class="cmd">$ weft ls --ready</span>
+<span class="out">f46bc2b  bug   N+1 in report generation
+7f9341e  bug   cache invalidation race
+ca75891  spec  batch export spec</span></code></pre>
+<p>The task is gone from <code>--ready</code>: it depends on the spec, which is not
+done. Ask why rather than guessing.</p>
+<pre><code><span class="cmd">$ weft why b8723f9</span>
+<span class="out">b8723f9  task 7: batch export
+
+blocked by
+
+  ca75891  spec  batch export spec</span></code></pre>
+<div class="why"><b><code>why</code> prints the path, not the word "blocked".</b> A bare
+status is not actionable. Readiness is optimistic and means "no <em>known</em>
+blocker" — never "safe to start".</div>
+
+<h2><span class="n">5.</span> Say you are on it</h2>
+<pre><code><span class="cmd">$ weft claim ca75891 --note "drafting the schema"</span>
+<span class="out">ca75891 claimed by user:you</span>
+
+<span class="cmd">$ weft ls --mine</span>
+<span class="out">ca75891  spec  batch export spec</span></code></pre>
+<div class="note"><strong>Claims are advisory and do not lock.</strong> Two live claims on
+one node is a reported condition, not an error. Claims expire — the default TTL
+is 7 days — so <code>weft ls --stale</code> finds work someone took and never came
+back to. Use <code>--holder</code> to record that <em>somebody else</em> seems to be on
+something, with <code>--source inferred</code>.</div>
+
+<h2><span class="n">6.</span> Watch the frontier move</h2>
+<pre><code><span class="cmd">$ weft done ca75891</span>
+<span class="out">ca75891 done</span>
+
+<span class="cmd">$ weft ls --ready</span>
+<span class="out">f46bc2b  bug   N+1 in report generation
+7f9341e  bug   cache invalidation race
+b8723f9  task  task 7: batch export</span></code></pre>
+<p>The task is ready now, because its only blocker resolved. That is the whole
+loop: assert, connect, ask what is startable, record state, ask again.</p>
+<div class="why"><b><code>why</code> and <code>ls --ready</code> are only as good as the
+<code>done</code> states in the graph.</b> On a graph where nothing is marked done,
+every node's nearest open blocker is one hop away and the answers look broken.
+They are not — record state as you go. Importing a repo is the fast way to seed
+it: <code>weft import gh acme/api --merged-since 30d</code> brings merged pull
+requests in as <code>done</code> alongside the open issues.</div>
+
+<h2><span class="n">7.</span> See the whole thing</h2>
+<pre><code><span class="cmd">$ weft show b8723f9</span>
+<span class="out">b8723f9  task  task 7: batch export
+  ns     acme/api
+  state  open
+  source asserted, per user:you
+  age    created just now, touched just now
+
+  depends on
+    ca75891  spec  batch export spec  (done)</span></code></pre>
+<p>One call returns a whole neighbourhood — deliberately, because if orienting
+takes five commands nobody orients. For the whole graph at once:</p>
+<pre><code><span class="cmd">$ weft export --json | head -14</span>
+<span class="out">{
+  "nodes": [
+    {
+      "id": "f46bc2b5021b6440a7794975a0cc27118a2458810a91372456fa844c3a1a7761",
+      "ns": "acme/api",
+      "kind": "bug",
+      "title": "N+1 in report generation",
+      "state": "open",
+      "refs": [
+        "gh:acme/api#412"
+      ],
+      "created": "2026-08-11T22:55:56.428699-07:00",
+      "touched": "2026-08-11T22:55:56.428699-07:00"
+    },</span></code></pre>
+<p>And to look at it as a picture:</p>
+<pre><code><span class="cmd">$ weft view</span></code></pre>
+<div class="note"><strong>Do not write your own renderer.</strong>
+<code>weft view</code> writes that same graph as one page with
+search, namespace scope, folding and layout, prints where it put it
+(<code>--open</code> opens it too), and keeps
+its view state in the URL fragment — so what you send someone is a link to the
+view, not a description of which dropdowns to set. It always carries the full
+export, so inferred edges draw differently from asserted ones, claims appear,
+and an observation shows its age. Add <code>--only-ns acme/api</code> when the
+page is going to leave your machine, and <code>--self-contained</code> when it
+has to draw without the network.</div>
+
+<h2><span class="n">8.</span> Where to go next</h2>
+<ul>
+  <li><a href="advanced-walkthrough.html">advanced-walkthrough.html</a> — the same
+      loop across two repositories, with the parts that only appear once several
+      writers are involved: duplicate assertions and <code>merge</code>, blast
+      radius, routes between two nodes, claims about other people, retractions,
+      and what weft refuses to do.</li>
+  <li><code>weft help agent</code> — the orientation snippet to paste into a project's
+      <code>CLAUDE.md</code>. It ships with the binary, so it cannot drift from it.</li>
+  <li><a href="SPEC.md">SPEC.md</a> — the data model, the query semantics, and the
+      design constraints, with an appendix recording the prior art behind each
+      decision.</li>
+  <li><a href="EVENTS.md">EVENTS.md</a> — the log format. Normative, and it wins on
+      any conflict with SPEC.</li>
+  <li><a href="BUILD.md">BUILD.md</a> — stack, layout, the measured performance
+      budget, and the verification ladder.</li>
+</ul>
+
+<div class="why"><b>The log is the contract, not the binary.</b> Everything above is one
+append-only JSONL file. Other tools read it, agents parse it, and the graph is a
+fold over it — which is where history, audit and multi-writer support come from
+for free.</div>
+
+<footer>
+  weft — one static binary, no daemon, no server.
+  Generated examples verified by <code>cmd/weft/gettingstarted_test.go</code>.
+</footer>
+
+</div>
+</body>
+</html>

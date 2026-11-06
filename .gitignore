@@ -1,0 +1,25 @@
+# Build output
+/weft
+/dist/
+# Generated locally by the pr-dashboard skill; a snapshot, not source.
+/pr-dashboard.html
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Test scratch — smoke and conformance runs point WEFT_HOME here
+/tmp/
+
+# Conformance fixtures are committed data, not build output (EVENTS.md §7).
+# The global excludesFile ignores *.jsonl, which would silently drop them and
+# leave a fresh clone unable to run its own test suite.
+!testdata/conformance/*.jsonl
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+*.swp

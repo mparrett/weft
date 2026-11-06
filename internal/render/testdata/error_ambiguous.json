@@ -1,0 +1,8 @@
+{
+  "error": "prefix \"a3f\" is ambiguous",
+  "code": 4,
+  "candidates": [
+    "a3f91c2",
+    "a3fbb01"
+  ]
+}

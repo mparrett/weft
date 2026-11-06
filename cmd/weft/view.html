@@ -1,0 +1,1811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  /* Palette taken from the pr-dashboard skill's template so the two local
+     tools read as siblings. Cool blue-biased neutrals, with semantic colour
+     kept separate from the accent. */
+  :root{
+    color-scheme:light;
+    --ink:#141a24; --muted:#5b6675; --faint:#8a94a3; --line:#d3dae3;
+    --bg:#f5f7fa; --card:#ffffff; --card2:#fcfdff;
+    --ok:#15803d; --ok-bg:#e9f6ec; --ok-line:#8fd0a3;
+    --active:#1d4ed8; --active-bg:#eaf0fe; --active-line:#9db8f6;
+    --defer:#475569; --defer-bg:#eef1f5;
+    --block:#b91c1c;
+    --ns1:#2a78d6; --ns2:#eda100; --ns3:#e87ba4; --ns4:#008300;
+    --chrome:120px; --fit-h:70vh; --pane-h:70vh;
+  }
+  /* Dark applies when the OS asks for it and the reader has not forced light;
+     the explicit attribute wins in both directions. */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ color-scheme:dark;
+      --ink:#e6e9ee; --muted:#9aa4b2; --faint:#6b7686; --line:#2b333f;
+      --bg:#0e1218; --card:#161b22; --card2:#1a2029;
+      --ok:#56d98a; --ok-bg:#11291b; --ok-line:#255f3c;
+      --active:#7ea2ff; --active-bg:#16233f; --active-line:#2f4b8f;
+      --defer:#9aa4b2; --defer-bg:#1c222b;
+      --block:#f87171;
+      --ns1:#3987e5; --ns2:#c98500; --ns3:#d55181; --ns4:#008300;
+    }
+  }
+  :root[data-theme="dark"]{ color-scheme:dark;
+    --ink:#e6e9ee; --muted:#9aa4b2; --faint:#6b7686; --line:#2b333f;
+    --bg:#0e1218; --card:#161b22; --card2:#1a2029;
+    --ok:#56d98a; --ok-bg:#11291b; --ok-line:#255f3c;
+    --active:#7ea2ff; --active-bg:#16233f; --active-line:#2f4b8f;
+    --defer:#9aa4b2; --defer-bg:#1c222b;
+    --block:#f87171;
+    --ns1:#3987e5; --ns2:#c98500; --ns3:#d55181; --ns4:#008300;
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .mono,code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+             font-variant-numeric:tabular-nums;}
+
+  header{background:var(--card);border-bottom:1px solid var(--line);
+         padding:11px 18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-.01em;white-space:nowrap;}
+  .scope{font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:99px;
+         padding:2px 9px;white-space:nowrap;}
+  .counts{color:var(--muted);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-left:auto;}
+
+  input[type=search]{padding:5px 9px;border:1px solid var(--line);border-radius:7px;
+                     background:var(--card2);color:var(--ink);min-width:190px;font-size:13px;}
+  input[type=search]:focus-visible,button:focus-visible,
+  input[type=checkbox]:focus-visible{outline:2px solid var(--active);outline-offset:1px;}
+
+  .check{font-size:12px;color:var(--muted);display:inline-flex;gap:5px;align-items:center;
+         cursor:pointer;user-select:none;white-space:nowrap;}
+
+  /* Segmented control: one-of-N, so real buttons carrying aria-pressed rather
+     than styled divs — it stays keyboard-reachable and announces its state. */
+  .ctl{display:inline-flex;gap:7px;align-items:center;}
+  .ctl-label{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;}
+  .seg{display:inline-flex;gap:1px;padding:2px;background:var(--card2);
+       border:1px solid var(--line);border-radius:8px;}
+  .seg button{appearance:none;border:0;background:transparent;color:var(--muted);
+              font:600 11px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+              padding:5px 8px;border-radius:6px;cursor:pointer;letter-spacing:.02em;}
+  .seg button:hover{color:var(--ink);}
+  .seg button[aria-pressed="true"]{background:var(--active-bg);color:var(--active);}
+  input[type=range]{width:88px;accent-color:var(--active);cursor:pointer;}
+  input[type=range]:disabled{opacity:.4;cursor:default;}
+  .zoomval{font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--faint);
+           min-width:32px;font-variant-numeric:tabular-nums;}
+
+  .legend{display:flex;gap:15px;flex-wrap:wrap;align-items:center;padding:8px 18px;
+          border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  /* display:inline-flex above outranks the UA rule for [hidden], so an entry
+     shown only on a scoped page needs this to actually stay hidden. */
+  .legend span[hidden]{display:none;}
+  .legend .touch-gestures{display:none;}
+  .swatch{width:15px;height:11px;border-radius:3px;border:1px solid var(--line);display:inline-block;
+          background:var(--card2);}
+  .swatch.done{background:var(--ok-bg);border-color:var(--ok-line);}
+  .swatch.dropped{background:transparent;border-style:dashed;border-color:var(--faint);}
+  .swatch.ctx{background:transparent;border-color:var(--faint);opacity:.55;}
+  .swatch.ext{background:transparent;border-style:dotted;border-color:var(--faint);}
+  .rule{width:17px;height:0;border-top:2px solid var(--block);display:inline-block;}
+  .rule.partof{border-top:2px dotted var(--active);}
+  .rule.inferred{border-top:2px dashed var(--muted);opacity:.7;}
+  .rule.other{border-top-color:var(--line);}
+  .swatch.nsmode{background:linear-gradient(90deg,var(--ns1) 0 25%,var(--ns2) 25% 50%,
+                 var(--ns3) 50% 75%,var(--ns4) 75%);border-color:transparent;}
+  .swatch.nsdone{opacity:.5;}
+  .legend .ns-groups{gap:12px;flex-wrap:wrap;}
+  .legend .ns-groups .n{color:var(--faint);font-variant-numeric:tabular-nums;}
+
+  /* The help panel explains the legend rather than restating it, so it sits
+     directly under it and is closed until asked for: a reader who knows the
+     marks should not pay a row for them. */
+  .help-toggle{appearance:none;margin-left:auto;width:22px;height:22px;flex:none;
+               border-radius:999px;border:1px solid var(--line);background:var(--card2);
+               color:var(--muted);font:600 12px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+               cursor:pointer;}
+  .help-toggle:hover{color:var(--ink);}
+  .help-toggle[aria-expanded="true"]{background:var(--active-bg);color:var(--active);
+                                     border-color:var(--active);}
+  .help-toggle:focus-visible{outline:2px solid var(--active);outline-offset:1px;}
+  /* min(…,100%) so one column fits a phone: a bare 380px minimum is wider than a
+     390px screen less its padding, and the page scrolled sideways. */
+  .legend-help{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(380px,100%),1fr));
+               gap:5px 28px;padding:6px 18px 12px;border-bottom:1px solid var(--line);
+               background:var(--card);font-size:12px;color:var(--muted);}
+  .legend-help[hidden]{display:none;}
+  .legend-help h3{grid-column:1/-1;margin:8px 0 1px;font-size:11px;font-weight:600;
+                  text-transform:uppercase;letter-spacing:.06em;color:var(--faint);}
+  .legend-help .row{display:flex;gap:10px;align-items:baseline;line-height:1.4;}
+  .legend-help .term{flex:none;width:128px;display:inline-flex;gap:5px;align-items:center;
+                     color:var(--ink);}
+  .legend-help code{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);}
+
+  main{display:flex;align-items:flex-start;}
+  /* Bounded at every width, not just on a phone. A pane whose height equals its
+     content never scrolls itself, so the page scrolls instead and the wheel has
+     nowhere to go — which is fine until the wheel means zoom, and then it is the
+     difference between a canvas and a document. Bounding it also stops the
+     header scrolling away from the graph it labels. */
+  /* touch-action is what makes a two-finger pinch reach the handlers below
+     instead of the browser zooming the whole page: pan-x pan-y keeps one-finger
+     scrolling native — momentum and all — and claims only the pinch. Without it
+     the handlers still fire and the page zooms as well, which reads as the graph
+     fighting the gesture. */
+  #graph{flex:1;padding:18px;overflow:auto;min-width:0;height:var(--pane-h);
+         overscroll-behavior:contain;cursor:grab;touch-action:pan-x pan-y;}
+  #graph.panning{cursor:grabbing;user-select:none;}
+  /* One variable drives every zoom level, so the chips and the slider are the
+     same mechanism at different granularities rather than two that can disagree.
+     mermaid's inline max-width has to go entirely, not be capped at 100%, or
+     magnifying past full width silently does nothing. No transition: it would
+     lag visibly behind a dragged slider, which is the interaction that matters
+     more than a chip click looking smooth. */
+  #graph svg{max-width:none !important;width:calc(100% * var(--zoom,1));
+             height:auto;display:block;}
+  /* Fit is the one level that is not a width multiple: it bounds both axes and
+     lets the aspect ratio letterbox. It can only ever shrink — a graph already
+     shorter than the viewport is untouched. */
+  #graph.fit svg{width:auto;max-width:100%;height:auto;
+                 max-height:var(--fit-h);margin:0 auto;}
+
+  aside{width:318px;flex:none;border-left:1px solid var(--line);background:var(--card);
+        padding:15px 16px;position:sticky;top:0;max-height:var(--pane-h);overflow:auto;}
+  aside h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+           color:var(--faint);margin:0 0 11px;font-weight:600;}
+  dl{margin:0;font-size:13px;}
+  dt{color:var(--faint);margin-top:11px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;}
+  dd{margin:2px 0 0;word-break:break-word;}
+  aside a{color:var(--active);text-decoration:none;border-bottom:1px solid currentColor;}
+  aside a:hover{opacity:.75;}
+  .empty{color:var(--muted);font-size:13px;font-style:italic;}
+
+  /* State reads as a shape before it reads as a word. */
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+        font-weight:600;letter-spacing:.02em;}
+  .pill.open{background:var(--active-bg);color:var(--active);}
+  .pill.done{background:var(--ok-bg);color:var(--ok);}
+  .pill.dropped{background:var(--defer-bg);color:var(--defer);}
+  .chip{display:inline-block;padding:2px 7px;border-radius:5px;background:var(--card2);
+        border:1px solid var(--line);color:var(--muted);font-size:11px;}
+  /* Provenance and staleness are qualifiers on a fact, not facts — quieter than
+     the thing they qualify, and never quiet enough to miss. */
+  .obs{color:var(--faint);font-size:11px;}
+  .src{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;
+       background:var(--defer-bg);color:var(--defer);text-transform:lowercase;}
+  /* A lapsed claim is dimmed as well as labelled: the label answers a reader
+     who is looking, the dimming answers one who is skimming. */
+  .src.expired{background:var(--card2);color:var(--faint);}
+  .lapsed code{opacity:.55;}
+
+  .node.hit>rect,.node.hit>polygon{stroke-width:3px !important;}
+  @media (prefers-reduced-motion: reduce){*{transition:none !important;}}
+  /* Wide screens show every control at once; the toggle and the sheet dismiss
+     are phone affordances and would be noise here. */
+  .more-toggle,.sheet-close{display:none;}
+  .more{display:contents;}
+
+  /* A phone in portrait is the case the desktop layout serves worst. Measured
+     at 390x664 before this block: header and legend took 350px — 53% of the
+     screen — the graph got 231px, and the detail panel sat below the fold, so
+     tapping a node appeared to do nothing.
+
+     The three moves are: give the chrome back to the graph, make detail a sheet
+     that comes to you, and keep the graph legible rather than fitting it to a
+     390px column. */
+  @media (max-width: 900px){
+    header{padding:8px 12px;gap:8px 12px;}
+    h1{font-size:14px;}
+    .controls{margin-left:0;gap:8px 10px;width:100%;}
+    /* Its own row. Sharing with the scope select left it about sixty pixels
+       wide — narrower than the word "filter" — and the filter is the control
+       this screen most needs to be usable. */
+    input[type=search]{flex:1 1 100%;min-width:0;}
+    #nsFilter{max-width:52vw;}
+
+    /* Secondary controls fold away. Search, scope and zoom stay out because
+       they are the three a reader actually reaches for on a small screen —
+       zoom especially, since it stands in for a pinch. */
+    .more{display:none;flex-wrap:wrap;gap:10px;width:100%;}
+    .more.open{display:flex;}
+    .more-toggle{display:inline-flex;align-items:center;appearance:none;cursor:pointer;
+                 background:var(--card2);border:1px solid var(--line);border-radius:7px;
+                 color:var(--muted);font:600 11px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+                 padding:6px 9px;letter-spacing:.02em;}
+    .more-toggle[aria-expanded="true"]{background:var(--active-bg);color:var(--active);}
+
+    /* The zoom slider needs a drag this screen has no room for; the chips do
+       the same job with a tap. The labels go because the controls are legible
+       without them once there are only two. */
+    .ctl-label,input[type=range],.zoomval{display:none;}
+
+    /* Explanatory, not interactive, and it cost two rows. The detail sheet
+       carries the same information for whatever is actually being looked at.
+       The gesture hint is the exception and stays: it is the one line here a
+       phone cannot discover another way — there is no hover, no title
+       attribute, and two-finger zoom is not guessable from a row of
+       percentages. One line, so it costs one row rather than two. */
+    .legend > span{display:none;}
+    .legend > .touch-gestures{display:inline-flex;}
+    /* In namespace colour mode the colours mean nothing without their key. */
+    .legend > .ns-groups{display:inline-flex;}
+
+    /* align-items is the other half of turning this into a column, and leaving
+       it out is invisible on the axis you are thinking about. The desktop rule
+       sets flex-start so the sticky detail panel does not stretch to the graph's
+       height; once the direction flips, the cross axis is *width*, so the same
+       declaration shrink-wraps the graph pane to its content instead of filling
+       the screen — 320px of a 390px phone, with the rest dead space to the right
+       of the scrollbar. The pane is the whole point of this layout, so it
+       stretches. */
+    main{flex-direction:column;align-items:stretch;}
+    /* The pane's height and overscroll now come from the base rule, which binds
+       them at every width. What is still specific to a phone is flex:none, and
+       it matters as much as the height did: main turns to a column here, so the
+       main axis becomes vertical and flex-basis governs it — height is simply
+       ignored while flex:1 stands, which is why setting it looked like it did
+       nothing.
+
+       Panning stays a finger drag rather than the mouse drag the base rule sets
+       up, so no grab cursor here; a phone has no cursor to change. */
+    #graph{padding:10px;flex:none;-webkit-overflow-scrolling:touch;cursor:auto;}
+
+    /* Detail becomes a sheet over the graph rather than a panel beneath it.
+       Below the fold it read as a broken tap: the panel updated where nobody
+       was looking. */
+    /* top:auto undoes the desktop rule's sticky anchor. Left in place it pins
+       the sheet to the top of the screen with bottom:0 stretching it, so it
+       covered the graph from the wrong edge. */
+    aside{position:fixed;top:auto;left:0;right:0;bottom:0;width:auto;flex:none;
+          border-left:0;border-top:1px solid var(--line);border-radius:12px 12px 0 0;
+          max-height:52vh;overflow:auto;z-index:20;
+          padding:12px 14px calc(14px + env(safe-area-inset-bottom));
+          box-shadow:0 -10px 28px rgba(0,0,0,.20);
+          transform:translateY(101%);transition:transform .18s ease;}
+    body.has-detail aside{transform:translateY(0);}
+    .sheet-close{display:inline-flex;align-items:center;justify-content:center;
+                 position:absolute;top:8px;right:10px;width:32px;height:32px;
+                 appearance:none;background:transparent;border:0;border-radius:8px;
+                 color:var(--muted);font-size:22px;line-height:1;cursor:pointer;}
+    .sheet-close:hover{background:var(--card2);color:var(--ink);}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <span class="counts" id="counts"></span>
+  <!-- In the header rather than the legend, which is hidden on a phone. A
+       reader has to be able to tell a scoped page from a whole one wherever
+       they open it, or they read an absence as an answer. -->
+  <span class="scope" id="scope" hidden></span>
+  <div class="controls">
+    <input type="search" id="q" placeholder="filter by title, kind, ref, namespace &mdash; !term excludes, touched<7d">
+    <!-- `weft export` is whole-store on purpose: edges cross namespaces, so a
+         scoped export would name nodes it left out. Scoping belongs here, in
+         the viewer, where the excluded side can still be drawn as context. -->
+    <label class="check">ns <select id="nsFilter"></select></label>
+    <!-- Collapsed on a phone, where the full control set costs more screen than
+         the graph it configures. Search, scope and zoom stay out; the rest is
+         behind the toggle. -->
+    <button type="button" class="more-toggle" id="moreToggle"
+            aria-expanded="true" aria-controls="moreControls">options</button>
+    <!-- The gesture is now modal, so it has to be discoverable somewhere: a
+         plain scroll pans and only a pinch zooms, which is not guessable from
+         a row of percentages. -->
+    <div class="ctl" title="Pinch, or ctrl/cmd+wheel, to zoom. Scroll or drag to pan."><span class="ctl-label">zoom</span>
+      <div class="seg" id="zoom" role="group" aria-label="Zoom">
+        <button data-v="fit" aria-pressed="false" title="whole graph on screen">fit</button>
+        <button data-v="50" aria-pressed="false" title="half width">50%</button>
+        <button data-v="100" aria-pressed="true" title="full width">100%</button>
+        <button data-v="200" aria-pressed="false" title="twice full width">2&times;</button>
+      </div>
+      <input type="range" id="zoomRange" min="20" max="300" step="5" value="100"
+             aria-label="Zoom level, percent of full width">
+      <span class="zoomval" id="zoomVal">100%</span>
+    </div>
+    <div class="more" id="moreControls">
+      <label class="check"><input type="checkbox" id="showDropped"> dropped</label>
+      <!-- Off by default: an unconnected node has no structure for a graph view
+           to show, and they crowd out everything that does. The counts line
+           always states how many are hidden, so this never conceals data. -->
+      <label class="check"><input type="checkbox" id="showIsolated"> unconnected</label>
+      <!-- On by default: the parent a child is `part-of` is already the box it
+           belongs in, so drawing both is 36% more boxes saying the same thing.
+           The counts line always states how many folded, and a folded parent
+           says so on its label, so this never conceals data. -->
+      <label class="check"><input type="checkbox" id="foldGroups" checked
+             title="collapse part-of children into their parent"> grouped</label>
+      <div class="ctl"><span class="ctl-label">layout</span>
+        <div class="seg" id="dir" role="group" aria-label="Graph direction">
+          <button data-v="LR" aria-pressed="true" title="left to right">LR</button>
+          <button data-v="TD" aria-pressed="false" title="top down">TD</button>
+          <button data-v="RL" aria-pressed="false" title="right to left">RL</button>
+          <button data-v="BT" aria-pressed="false" title="bottom up">BT</button>
+        </div>
+      </div>
+      <div class="ctl"><span class="ctl-label">colour</span>
+        <div class="seg" id="colour" role="group" aria-label="Colour nodes by">
+          <button data-v="state" aria-pressed="true" title="fill shows open, done, dropped">state</button>
+          <button data-v="ns" aria-pressed="false" title="fill shows namespace; done gets a check mark">ns</button>
+        </div>
+      </div>
+      <div class="ctl"><span class="ctl-label">theme</span>
+        <div class="seg" id="theme" role="group" aria-label="Colour theme">
+          <button data-v="auto" aria-pressed="true">auto</button>
+          <button data-v="light" aria-pressed="false">light</button>
+          <button data-v="dark" aria-pressed="false">dark</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+<!-- Every entry that draws a mark carries data-help, and the ? panel is built
+     from these spans, so an entry cannot ship without its explanation (a test
+     pins that). -->
+<div class="legend">
+  <span id="legendOpen" data-help="Not finished. Every node starts here."><i class="swatch"></i> open</span>
+  <span id="legendDone" data-help="Finished. It no longer blocks anything that depends on it."><i class="swatch done"></i> done</span>
+  <!-- Namespace colour mode replaces the two entries above: fill is taken by
+       the namespace, so done moves to a check mark and a paler box. -->
+  <span id="legendNSMode" hidden data-help="Fill colour is the namespace group, and each box's first line names it. The groups are the next path segment below whatever every drawn node shares, so the whole store colours by owner, and narrowing to one project's nodes colours by its subspaces. Colours are ranked by size across the whole page, so a search does not repaint them; four colours, then grey for the rest. Dropped, search context and outside-this-page keep the border styles shown in their own entries, drawn in the group's colour."><i class="swatch nsmode"></i> namespace</span>
+  <span id="legendDoneNS" hidden data-help="Finished, in namespace colour mode: a paler box, with a check mark before the title."><i class="swatch nsdone"></i> &#x2713; done</span>
+  <span class="ns-groups" id="legendNS" hidden></span>
+  <span data-help="Decided not to do it, as opposed to finishing it. Kept for history, it stops blocking anything, and it is hidden unless &quot;dropped&quot; is ticked."><i class="swatch dropped"></i> dropped</span>
+  <span data-help="Not a search or namespace match itself, but directly linked to one, so you can see what the matches connect to."><i class="swatch ctx"></i> search context</span>
+  <!-- Only meaningful on a page built with --only-ns; unhidden there. -->
+  <span id="legendExternal" hidden data-help="A node in another namespace, left out of this page. Kept as a stub (id and namespace only) so a blocker in another project does not silently disappear."><i class="swatch ext"></i> outside this page</span>
+  <span data-help="The arrow points at what has to happen first: A depends-on B means B blocks A."><i class="rule"></i> depends-on</span>
+  <span data-help="A belongs to B, a piece of a larger piece of work. With &quot;grouped&quot; on, children fold into their parent and its label counts them."><i class="rule partof"></i> part-of</span>
+  <span data-help="conflicts-with, supersedes, derived-from, same-as. Each edge is labelled with its kind."><i class="rule other"></i> other edges</span>
+  <!-- Only meaningful when the export carried provenance (--include source);
+       unhidden then, since a legend entry for something never drawn is noise. -->
+  <span id="legendInferred" hidden data-help="An edge somebody guessed rather than observed or asserted. Its label ends in ? so it can be discounted."><i class="rule inferred"></i> inferred (<code>?</code>)</span>
+  <span>click a node for detail</span>
+  <!-- The gesture is modal, and a title attribute reaches neither a keyboard nor
+       a screen reader on a non-focusable element, so the rule is stated here as
+       visible text. Two versions because the gestures genuinely differ: a phone
+       has no wheel and no modifier key, and naming ctrl there would be noise a
+       reader cannot act on. -->
+  <span class="pointer-gestures">drag or scroll to pan &middot;
+        pinch or ctrl/cmd+wheel to zoom</span>
+  <span class="touch-gestures">drag to pan &middot; two fingers to zoom</span>
+  <!-- A button, not a span, so it survives the phone rule that hides the
+       legend's spans: the panel is how a phone reader learns what the marks
+       mean at all. -->
+  <button type="button" class="help-toggle" id="helpToggle" aria-expanded="false"
+          aria-controls="legendHelp" title="what the marks, search and controls mean">?</button>
+</div>
+<div class="legend-help" id="legendHelp" hidden></div>
+<main>
+  <div id="graph"></div>
+  <aside>
+    <h2>Detail</h2>
+    <!-- Only rendered on a phone, where the panel is a sheet over the graph and
+         needs a way back. On a wide screen it sits beside the graph and dismiss
+         is meaningless. -->
+    <button type="button" class="sheet-close" id="detailClose" aria-label="Close detail">&times;</button>
+    <div id="detail" class="empty">Click a node.</div>
+  </aside>
+</main>
+
+__MERMAID__
+<script>
+const DATA = __DATA__;
+const INITIAL_NS = __INITIAL_NS__;
+// Non-empty when the page was built with --only-ns, i.e. when the other
+// namespaces are not in this file at all.
+const SCOPE = __SCOPE__;
+// The CDN URL the renderer came from, or "" when it was inlined; the message
+// shown when it failed to load depends on which.
+const MERMAID_SRC = __MERMAID_SRC__;
+// Kept before any scope is appended, so the tab title can be rebuilt each time
+// rather than accumulating suffixes.
+const BASE_TITLE = document.title;
+
+// Mermaid ids must be identifier-safe and are matched back to nodes on click,
+// so the mapping has to be total and reversible. Short hex prefixes can start
+// with a digit, hence the prefix.
+const mid = id => "n" + id.slice(0, 12);
+const byMid = new Map(DATA.nodes.map(n => [mid(n.id), n]));
+
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+// Mermaid label text. htmlLabels is on, so the label is parsed as HTML and a
+// bare "<" swallows the rest of the title: `fix N<M comparison` renders as
+// `fix N`. Mermaid's own #-entity form is used rather than &-entities, because
+// the text re-enters mermaid's parser before it reaches the DOM. Ampersand
+// first, or the later escapes get double-encoded.
+const mlabel = s => String(s)
+  .replace(/&/g, "#amp;")
+  .replace(/</g, "#lt;")
+  .replace(/>/g, "#gt;")
+  .replace(/"/g, "#quot;")
+  .replace(/[\[\]{}|]/g, " ");
+
+// gh:owner/repo#12 and pr:owner/repo#45 carry everything a URL needs. Other
+// schemes deliberately do not become links: branch: and file: name no host, and
+// a ref is free text (`weft add --ref anything:goes`), so anything that does not
+// match exactly stays plain rather than becoming a fabricated link.
+const REF_URL = /^(gh|pr):([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)#(\d+)$/;
+
+// A ref arrives as a bare string by default and as an object under
+// `weft export --include refs`. Both shapes have to work: the page is the first
+// consumer of a non-default export, and a page generated without the flag must
+// not break (SPEC §9.3). Everything downstream goes through these two, so the
+// shape is decided once rather than at every use.
+const refName = r => typeof r === "string" ? r : (r && r.ref) || "";
+
+// A claim with no expiry never ages out (`weft claim --ttl 0`), so an absent
+// value is "still live", not "expired at the epoch".
+const expiredClaim = stamp => !!stamp && Date.parse(stamp) < Date.now();
+const refObj = r => typeof r === "string" ? {} : (r || {});
+
+function refHTML(r) {
+  const name = refName(r), meta = refObj(r);
+  const m = REF_URL.exec(name);
+  let html;
+  if (!m) {
+    html = `<code>${esc(name)}</code>`;
+  } else {
+    // GitHub redirects /issues/N to /pull/N when N turns out to be a PR, so gh:
+    // is correct for both and needs no lookup to disambiguate.
+    const path = m[1] === "pr" ? "pull" : "issues";
+    const url = `https://github.com/${m[2]}/${path}/${m[3]}`;
+    html = `<a href="${esc(url)}" target="_blank" rel="noopener"><code>${esc(name)}</code></a>`;
+  }
+  // What upstream said, and when we looked. The age is the load-bearing half:
+  // a two-month-old reading of a closed issue presents exactly like one taken a
+  // minute ago without it, and an observation shown as current invites a
+  // decision on data nobody re-checked (EVENTS.md §2.5).
+  if (meta.upstream_state) {
+    const when = age(meta.observed_at);
+    html += ` <span class="obs">${esc(meta.upstream_state)}` +
+            `${when ? ` \u00b7 observed ${esc(when)}` : ""}</span>`;
+  }
+  return html;
+}
+
+// Coarse relative age, matching what `weft show` prints. Coarse on purpose: the
+// question recency answers is "should I look at this again", which turns on days
+// rather than seconds.
+//
+// Absent for a node exported before timestamps existed, and for a graph built by
+// hand — an empty string, so the caller drops the row rather than printing an
+// age computed from the epoch.
+function age(stamp) {
+  const t = Date.parse(stamp || "");
+  if (isNaN(t)) return "";
+  const d = (Date.now() - t) / 1000;
+  // Matches render.Age: a stamp ahead of now is a clock, not a fact, and the
+  // negative branch would otherwise render as permanently fresh.
+  if (d < 0) return "in the future";
+  if (d < 60) return "just now";
+  if (d < 3600) return Math.floor(d / 60) + "m ago";
+  if (d < 86400) return Math.floor(d / 3600) + "h ago";
+  return Math.floor(d / 86400) + "d ago";
+}
+
+// The node's own dates, as one line. Touched is dropped when it says nothing
+// new, or a node nobody has revisited prints the same age twice.
+// Compared as instants, never as strings. Go's RFC3339Nano drops the fractional
+// part entirely when it is zero, so a whole-second `created` and a fractional
+// `touched` one moment later compare 'Z' against '.' and report the touch as
+// *earlier* — dropping the clause for a node that did move. Offsets break it the
+// other way: two writers in different zones produce strings whose order is not
+// their chronological order.
+function ageLine(n) {
+  const created = age(n.created);
+  if (!created) return "";
+  const touched = age(n.touched);
+  if (touched && Date.parse(n.touched) > Date.parse(n.created)) {
+    return `created ${created}, touched ${touched}`;
+  }
+  return `created ${created}`;
+}
+
+const short = id => id.slice(0, 7);
+const trunc = (s, n) => s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
+const haystack = n =>
+  [n.title, n.kind, n.ns, n.state, ...(n.refs || []).map(refName),
+   ...(n.claims || []).map(c => c.holder)].join(" ").toLowerCase();
+
+const byId = new Map(DATA.nodes.map(n => [n.id, n]));
+
+// True for a stub standing in for the far end of an edge that leaves a scoped
+// page (--only-ns). It carries an id and a namespace, and nothing else — so
+// anything that reads ordinary node fields has to check.
+const isExternal = id => (byId.get(id) || {}).external === true;
+
+// Which nodes collapse into which parent.
+//
+// **The rule, in one line, because a grouping the tool cannot justify is one
+// nobody trusts: a node with no `part-of` in-edges whose only `part-of` out-edge
+// is P folds into P.** Measuring the real store is what picked that rule and not
+// a general one — 17 of 21 `part-of` sibling classes there are roots sharing a
+// single target, and strict single-entry/single-exit region detection covered 3%
+// of nodes against 36% for this. The container those children would collapse
+// into already exists, so this is rendering over data that is already exported:
+// no events, no new edge kind, no change to `weft export`.
+//
+// Nesting cannot arise, and that falls out of the rule rather than being
+// prevented: a parent carries `part-of` in-edges from the very children folding
+// into it, so it fails the first clause and never folds itself.
+//
+// Candidacy is global rather than per-selection on purpose. Derived from the
+// visible set instead, a `part-of` edge that a search filtered out would make
+// the same node collapse or not depending on what is in the search box.
+const FOLD = (() => {
+  const parents = new Map(), contains = new Set();
+  for (const e of DATA.edges) {
+    if (e.kind !== "part-of") continue;
+    if (!parents.has(e.from)) parents.set(e.from, []);
+    parents.get(e.from).push(e.to);
+    contains.add(e.to);
+  }
+  const into = new Map();
+  for (const [id, ps] of parents) {
+    if (ps.length !== 1 || contains.has(id) || ps[0] === id) continue;
+    // An external stub is never a container. The rule's justification is that
+    // the parent already exists and its label says what the group is — a stub
+    // has no title, so folding into one hides N real nodes behind a box that
+    // cannot say what they were. Found by looking at a scoped page: five of the
+    // reader's own nodes had collapsed into "\u2197 nooga/let-go/paths".
+    if (isExternal(ps[0])) continue;
+    into.set(id, ps[0]);
+  }
+  return { into };
+})();
+
+// Parents the reader has opened. Fold-by-default with the exceptions in the URL
+// keeps a link short and a collapsed view shareable, which is the payoff for
+// having moved view state into the fragment already.
+const UNFOLDED = new Set();
+
+const folding = () => document.getElementById("foldGroups").checked;
+
+// Collapse folded children into their parent, rewriting the selected sets.
+//
+// **The trap here is search.** A child that matches while its parent is folded
+// must not disappear: the box count drops, the graph looks tidier, and results
+// are missing with nothing to show it happened. Auto-unfolding a parent whose
+// descendant matches was the alternative and is worse — the drawing reshuffles
+// on every keystroke, which is harder to read than no fold at all — so the
+// parent counts as matched instead and its label carries how many of its folded
+// children matched. `matched` is extended here rather than in select() for that
+// reason, and the count is what makes the claim checkable.
+//
+// An exclusion needs no case of its own: `!term` shrinks the pool before any of
+// this runs, so an excluded child is already gone and cannot drag its parent in.
+function applyFold(nodes, edges, matched, narrowing, searching) {
+  const drawn = new Set(nodes.map(n => n.id));
+  const gone = new Map(); // child id -> the parent it folded into
+  // Children in the current selection that fold into each parent. Distinct from
+  // global candidacy (FOLD.into): under a filter the two disagree, and the
+  // detail panel has to follow this one or it lists nodes the "+N folded" label
+  // does not count and offers an unfold that changes nothing.
+  const group = new Map();
+  if (folding()) {
+    for (const n of nodes) {
+      const p = FOLD.into.get(n.id);
+      // Folding into a parent the filters removed would delete the child rather
+      // than group it.
+      if (!p || !drawn.has(p)) continue;
+      if (!group.has(p)) group.set(p, []);
+      group.get(p).push(n.id);
+      if (!UNFOLDED.has(p)) gone.set(n.id, p);
+    }
+  }
+  if (!gone.size) return { nodes, edges, folded: 0, counts: new Map(), hits: new Map(), group };
+
+  const counts = new Map(), hits = new Map();
+  for (const [c, p] of gone) {
+    counts.set(p, (counts.get(p) || 0) + 1);
+    if (narrowing && matched.has(c)) {
+      matched.add(p);
+      // Counted only for a positive term. A namespace filter narrows too, and
+      // under one every visible node matches by definition — so annotating the
+      // count there put "1 matching" on every folded parent, which says nothing
+      // and teaches the reader to skip the one place the annotation matters.
+      if (searching) hits.set(p, (hits.get(p) || 0) + 1);
+    }
+  }
+
+  // Re-pointing raises the two artifacts a merge raises (internal/graph/merge.go
+  // had to solve both): an edge whose ends now both land on the parent says only
+  // that the parent contains itself, and two re-pointed edges can collapse onto
+  // one (kind, from, to).
+  const at = id => gone.get(id) || id;
+  const seen = new Set(), outEdges = [];
+  for (const e of edges) {
+    const from = at(e.from), to = at(e.to);
+    if (from === to) continue;
+    const key = e.kind + "\u0000" + from + "\u0000" + to;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    outEdges.push(from === e.from && to === e.to ? e : { ...e, from, to });
+  }
+  return {
+    nodes: nodes.filter(n => !gone.has(n.id)),
+    edges: outEdges, folded: gone.size, counts, hits, group,
+  };
+}
+
+// A query is space-separated terms, all of which must hold; a term starting
+// with "!" must not match. Splitting rather than treating the box as one
+// substring is what lets an exclusion compose with a positive term, because the
+// question on a large graph is almost always "this, but not that".
+//
+// A lone "!" contributes nothing. Mid-typing it is a prefix, not a request to
+// exclude everything, and a box that blanks the graph on the keystroke before
+// the useful one reads as broken.
+//
+// Terms come back as predicates rather than strings, because a time word is not
+// a substring test. One that cannot be read yet — `touched<` mid-typing, or a
+// unit nobody defined — contributes nothing, for the same reason a lone "!"
+// does, and is returned in `ignored` so the counts line can say so instead of
+// leaving the reader to think it applied.
+function parseQuery(q) {
+  const want = [], reject = [], ignored = [];
+  for (const t of q.split(/\s+/)) {
+    const neg = t.startsWith("!");
+    const body = neg ? t.slice(1) : t;
+    if (!body) continue;
+    const m = termMatcher(body);
+    if (!m) ignored.push(t);
+    else (neg ? reject : want).push(m);
+  }
+  return { want, reject, ignored };
+}
+
+// Time words compare a node's own clocks — when it was asserted, and when
+// anything last touched it — never the artifact clock its refs carry, which is
+// for chronology and not for this (SPEC §6.3's two-clock rule). The two forms
+// read the way they would be said aloud, and so point opposite ways:
+//
+//   touched<7d          an age: touched less than 7 days ago
+//   touched<2026-10-01  a date: touched before that day
+//
+// A date is the start of that day in the reader's own time zone, the day they
+// mean, and the range is half-open: `>` includes the day, `<` excludes it.
+const TIME_WORD = /^(touched|created)([<>])(.*)$/;
+const UNIT_MS = { h: 3600e3, d: 86400e3, w: 7 * 86400e3 };
+
+// timeBound reads the right-hand side of a time word as an instant, or null.
+function timeBound(value, now) {
+  let m = /^(\d+)([hdwmy])$/.exec(value);
+  if (m) {
+    const n = +m[1];
+    let at;
+    if (m[2] in UNIT_MS) {
+      at = now - n * UNIT_MS[m[2]];
+    } else {
+      // Calendar months and years, not 30-day blocks: "touched<1m" on 31 March
+      // means since 28 or 29 February, which is what a reader asking means.
+      // Shifted from the 1st and clamped back, because setMonth on the 31st
+      // into a 28-day month overflows into March and lands days late.
+      const d = new Date(now), day = d.getDate();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - (m[2] === "m" ? n : 12 * n));
+      d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+      at = d.getTime();
+    }
+    // A bound so large it leaves Date's range is unreadable, not "matches
+    // nothing": it has to be reported as ignored like any other.
+    return Number.isFinite(at) ? { at, age: true } : null;
+  }
+  m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    // Date rolls 2026-02-31 over into March rather than refusing it.
+    if (d.getMonth() !== +m[2] - 1) return null;
+    return { at: d.getTime(), age: false };
+  }
+  return null;
+}
+
+// A node with no `touched` was never touched after it was created, so its
+// creation is its last activity. A stub outside a scoped page has neither, and
+// matches no time word in either direction.
+const nodeTime = (n, clock) =>
+  Date.parse((clock === "touched" ? n.touched || n.created : n.created) || "");
+
+function termMatcher(t) {
+  const m = TIME_WORD.exec(t);
+  if (!m) return n => haystack(n).includes(t);
+  const b = timeBound(m[3], Date.now());
+  if (!b) {
+    // Unreadable as a time word. If the text itself occurs in the graph — a
+    // title like "retry when created>limit" — it is a plain search after all;
+    // otherwise it is a time word mid-typing and contributes nothing.
+    const text = n => haystack(n).includes(t);
+    return DATA.nodes.some(text) ? text : null;
+  }
+  const clock = m[1], less = m[2] === "<";
+  // An age bound is "this long ago", so a smaller age is a later instant.
+  const before = b.age ? !less : less;
+  return n => {
+    const t = nodeTime(n, clock);
+    if (Number.isNaN(t)) return false;
+    return before ? t < b.at : t >= b.at;
+  };
+}
+
+// Segmented controls. `seg(id)` reads the pressed value; clicking one presses
+// exactly one button and runs the handler.
+const seg = id => document.querySelector(`#${id} button[aria-pressed="true"]`).dataset.v;
+function onSeg(id, fn) {
+  const group = document.getElementById(id);
+  group.addEventListener("click", e => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.getAttribute("aria-pressed") === "true") return;
+    group.querySelectorAll("button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b === btn)));
+    fn(btn.dataset.v);
+  });
+}
+
+// Selecting is a couple of passes over two arrays; laying the result out is
+// mermaid running dagre over what was selected. They are split because the two
+// costs are nothing alike — on a 137-node graph, selection measured well under
+// a tenth of a millisecond against ~200 ms of layout — which is what lets the
+// counts line answer every keystroke while the drawing waits for a pause in
+// typing.
+function select() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const showDropped = document.getElementById("showDropped").checked;
+  const { want, reject, ignored } = parseQuery(q);
+  const searching = want.length > 0;
+
+  // Exclusion belongs here, with dropped, rather than in the matching below:
+  // both are hard, and everything downstream selects within what remains. Put
+  // it in the match instead and the context expansion would hand back exactly
+  // the nodes just excluded, drawn faded — which is the one result someone
+  // typing "!test" cannot have meant.
+  const pool = DATA.nodes.filter(n =>
+    (showDropped || n.state !== "dropped") &&
+    !reject.some(m => m(n)));
+  const inPool = new Set(pool.map(n => n.id));
+
+  // Namespace and a positive search are the same kind of filter — they select a
+  // subject set — so they compose and share one context expansion. An exclusion
+  // is not one of these: it shrinks the pool rather than choosing a subject, so
+  // "!test" alone shows the whole remaining graph rather than a narrowed slice.
+  const nsSel = document.getElementById("nsFilter").value;
+  const narrowing = searching || nsSel !== "";
+  const matched = new Set(pool.filter(n =>
+    (!searching || want.every(m => m(n))) &&
+    (nsSel === "" || n.ns === nsSel)).map(n => n.id));
+  let keep = new Set(matched);
+
+  if (narrowing) {
+    // Matches rarely link to *each other* — they link to a shared parent that
+    // does not match. Showing only matches yields a page of disconnected boxes,
+    // which is the one thing a graph view should never do, so direct
+    // neighbours come along as context and are drawn faded. For a namespace
+    // filter that context is the point: a blocker in another project is
+    // exactly what you must not filter into invisibility (SPEC §5).
+    for (const e of DATA.edges) {
+      if (matched.has(e.from) && inPool.has(e.to)) keep.add(e.to);
+      if (matched.has(e.to) && inPool.has(e.from)) keep.add(e.from);
+    }
+  }
+
+  let nodes = pool.filter(n => keep.has(n.id));
+  let edges = DATA.edges.filter(e => keep.has(e.from) && keep.has(e.to));
+
+  if (!narrowing && !document.getElementById("showIsolated").checked) {
+    const touched = new Set();
+    edges.forEach(e => { touched.add(e.from); touched.add(e.to); });
+    nodes = nodes.filter(n => touched.has(n.id));
+    keep = new Set(nodes.map(n => n.id));
+    edges = edges.filter(e => keep.has(e.from) && keep.has(e.to));
+  }
+
+  // After the isolated-node filter, deliberately. A parent whose children carry
+  // no edges but the `part-of` ones they fold along has none left afterwards, so
+  // running the filter second would drop it — and with it every child it stands
+  // for, while the reader had only asked to hide nodes with nothing to show. A
+  // folded parent is never that: it is N nodes, and its label says how many.
+  const folds = applyFold(nodes, edges, matched, narrowing, searching);
+  nodes = folds.nodes;
+  edges = folds.edges;
+  lastFolds = folds;
+
+  // A folded node is neither shown nor hidden, so it needs its own word or the
+  // arithmetic stops adding up and people stop trusting the line.
+  const hidden = DATA.nodes.length - nodes.length - folds.folded;
+  document.getElementById("counts").textContent =
+    `${nodes.length}/${DATA.nodes.length} nodes \u00b7 ${edges.length} edges` +
+    (folds.folded ? ` \u00b7 ${folds.folded} folded` : "") +
+    (hidden ? ` \u00b7 ${hidden} hidden` : "") +
+    (ignored.length ? ` \u00b7 ignoring ${ignored.join(" ")}` : "");
+  return { nodes, edges, matched, narrowing, folds };
+}
+
+// Namespace colour mode.
+//
+// A store holds dozens of namespaces, most of them nested (acme/api/auth), and
+// a categorical palette stays legible for a handful. So the colour is chosen at
+// the depth where the drawn nodes actually differ: strip the path prefix every
+// drawn node shares, colour by the next segment. The whole store colours by
+// owner; a view narrowed to one project's nodes colours by its subspaces.
+//
+// Colour follows the group, never its rank in the current view: the order is
+// counted over the whole page's data under that prefix, so a search that keeps
+// the depth repaints nothing. Four hues, then grey for the rest — four is what
+// survives the colour-blind check when every pair of boxes can sit side by
+// side, and the group name on each box carries identity regardless.
+const NS_SLOTS = 4;
+const nsSegs = ns => (ns || "").split("/").filter(Boolean);
+
+function nsGroups(drawn) {
+  let prefix = null;
+  for (const n of drawn) {
+    const s = nsSegs(n.ns);
+    if (prefix === null) { prefix = s; continue; }
+    let i = 0;
+    while (i < prefix.length && i < s.length && prefix[i] === s[i]) i++;
+    prefix = prefix.slice(0, i);
+  }
+  prefix = prefix || [];
+  const keyOf = ns => nsSegs(ns).slice(0, prefix.length + 1).join("/");
+  const total = new Map();
+  for (const n of DATA.nodes) {
+    const s = nsSegs(n.ns);
+    if (prefix.some((p, i) => s[i] !== p)) continue;
+    const k = keyOf(n.ns);
+    total.set(k, (total.get(k) || 0) + 1);
+  }
+  const ranked = [...total.keys()].sort((a, b) =>
+    total.get(b) - total.get(a) || (a < b ? -1 : a > b ? 1 : 0));
+  const slots = new Map(ranked.map((k, i) => [k, i < NS_SLOTS ? i : "x"]));
+  // A view drawing only small groups would otherwise be all grey while hues sit
+  // unused. Drawn groups past the top four borrow the slots no drawn group
+  // holds, in rank order. The top four never move, so a search still repaints
+  // nothing it keeps; only a borrowed colour can change, and only when the
+  // slot it borrowed is needed back.
+  const drawnKeys = new Set(drawn.map(n => keyOf(n.ns)));
+  const held = new Set([...drawnKeys].map(k => slots.get(k)).filter(s => s !== "x"));
+  const free = [...Array(NS_SLOTS).keys()].filter(s => !held.has(s));
+  for (const k of ranked) {
+    if (!free.length) break;
+    if (drawnKeys.has(k) && slots.get(k) === "x") slots.set(k, free.shift());
+  }
+  const base = prefix.join("/");
+  return {
+    base,
+    key: n => keyOf(n.ns),
+    slot: k => slots.has(k) ? slots.get(k) : "x",
+    // A node sitting exactly at the shared prefix, beside deeper siblings, is
+    // named by the prefix's own last segment.
+    label: k => (k === base ? prefix[prefix.length - 1] : k.slice(base ? base.length + 1 : 0))
+                || "(no namespace)",
+  };
+}
+
+// mixHex blends two #rrggbb colours; t is the share of the first. classDef
+// values are comma-separated, so color-mix() cannot be passed through.
+function mixHex(a, b, t) {
+  const ch = (h, i) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return "#" + [0, 1, 2].map(i =>
+    Math.round(ch(a, i) * t + ch(b, i) * (1 - t)).toString(16).padStart(2, "0")).join("");
+}
+
+const nsHue = (slot, css) =>
+  css.getPropertyValue(slot === "x" ? "--faint" : `--ns${slot + 1}`).trim();
+
+// One class per (group, state) pair rather than two classes per node, because
+// a mermaid node takes one class. State moves off the fill onto the border and
+// the text, which namespace mode leaves free.
+function nsClassDef(cls, css) {
+  const [, slotStr, variant] = /^g(\d|x)(\w+)$/.exec(cls);
+  const slot = slotStr === "x" ? "x" : +slotStr;
+  const v = name => css.getPropertyValue(name).trim();
+  const hue = nsHue(slot, css), surf = v("--card2");
+  const style = {
+    open:     `fill:${mixHex(hue, surf, .22)},stroke:${hue},stroke-width:2px,color:${v("--ink")}`,
+    done:     `fill:${mixHex(hue, surf, .08)},stroke:${mixHex(hue, surf, .5)},color:${v("--muted")}`,
+    dropped:  `fill:transparent,stroke:${hue},color:${v("--faint")},stroke-dasharray:4 3`,
+    context:  `fill:transparent,stroke:${mixHex(hue, surf, .5)},color:${v("--faint")}`,
+    external: `fill:transparent,stroke:${hue},color:${v("--muted")},stroke-dasharray:1 4`,
+  }[variant];
+  return `  classDef ${cls} ${style};`;
+}
+
+function updateColourLegend(byNs, drawn) {
+  const on = !!byNs;
+  for (const id of ["legendOpen", "legendDone"]) document.getElementById(id).hidden = on;
+  for (const id of ["legendNSMode", "legendDoneNS", "legendNS"]) document.getElementById(id).hidden = !on;
+  const el = document.getElementById("legendNS");
+  if (on) {
+    const css = getComputedStyle(document.documentElement);
+    const surf = css.getPropertyValue("--card2").trim();
+    const count = new Map();
+    for (const n of drawn) { const k = byNs.key(n); count.set(k, (count.get(k) || 0) + 1); }
+    const named = [...count.keys()].filter(k => byNs.slot(k) !== "x")
+      .sort((a, b) => byNs.slot(a) - byNs.slot(b));
+    const rest = [...count.keys()].filter(k => byNs.slot(k) === "x").sort();
+    const sw = slot => {
+      const hue = nsHue(slot, css);
+      return `<i class="swatch" style="background:${mixHex(hue, surf, .22)};border-color:${hue}"></i>`;
+    };
+    const items = named.map(k =>
+      `<span title="${esc(k || "(no namespace)")}">${sw(byNs.slot(k))} ${esc(byNs.label(k))} ` +
+      `<span class="n">${count.get(k)}</span></span>`);
+    if (rest.length) {
+      const total = rest.reduce((t, k) => t + count.get(k), 0);
+      items.push(`<span title="${esc(rest.map(k => k || "(no namespace)").join("\n"))}">${sw("x")} ` +
+                 `other (${rest.length}) <span class="n">${total}</span></span>`);
+    }
+    el.innerHTML = items.join("");
+  }
+  // The ? panel lists the entries now showing, so it has to follow the mode.
+  if (!document.getElementById("legendHelp").hidden) renderHelp();
+}
+
+function buildDef() {
+  const { nodes, edges, matched, narrowing, folds } = select();
+
+  // Direction is a property of graph shape, not taste: a depends-on chain reads
+  // naturally left to right, while a wide part-of fan is far more compact
+  // top-down. Which one a graph wants depends on the graph.
+  const lines = ["flowchart " + seg("dir")];
+  const byNs = seg("colour") === "ns" ? nsGroups(nodes) : null;
+  updateColourLegend(byNs, nodes);
+  const nsUsed = new Set();
+  for (const n of nodes) {
+    // A fold that does not announce itself is a lie about how many boxes there
+    // are, and the matching count is what keeps a hidden search hit findable.
+    const f = folds.counts.get(n.id) || 0, h = folds.hits.get(n.id) || 0;
+    const tag = f ? `<br/>+${f} folded${h ? `, ${h} matching` : ""}` : "";
+    // A stub outside the page's scope has no title to show, so its second line
+    // carries only where it lives. The approved boundary is deliberately
+    // minimal: id and namespace, not any of the outside node's work data.
+    const body = n.external
+      ? mlabel("\u2197 " + (n.ns || "elsewhere"))
+      : mlabel(trunc(n.title, 58));
+    // Checked before the search-context class: a stub is external whether or
+    // not a filter happens to be narrowing, and that is the more important
+    // thing to say about it.
+    const variant = n.external ? "external"
+      : narrowing && !matched.has(n.id) ? "context"
+      : n.state === "done" || n.state === "dropped" ? n.state : "open";
+    if (byNs) {
+      // The group is named on the box as well as coloured, so identity never
+      // rests on hue alone; done takes a check mark because fill is spoken for.
+      const k = byNs.key(n), cls = `g${byNs.slot(k)}${variant}`;
+      const check = variant === "done" ? "\u2713 " : "";
+      lines.push(`  ${mid(n.id)}["${mlabel(trunc(byNs.label(k), 24) + " \u00b7 " + short(n.id))}` +
+                 `<br/>${mlabel(check)}${body}${tag}"]`);
+      lines.push(`  class ${mid(n.id)} ${cls}`);
+      nsUsed.add(cls);
+      continue;
+    }
+    lines.push(`  ${mid(n.id)}["${mlabel(short(n.id))}<br/>${body}${tag}"]`);
+    if (variant !== "open") lines.push(`  class ${mid(n.id)} ${variant}`);
+  }
+
+  // Relation kind is carried by colour as well as by the label, matching the
+  // DOT export, so the shape of a dependency chain reads without stopping to
+  // read every edge.
+  const byKind = {};
+  edges.forEach((e, i) => { (byKind[e.kind] ||= []).push(i); });
+  // An inference drawn identically to an assertion breaks the promise that
+  // inferences are "marked as inferences so you can tell" — in the one view
+  // most likely to be shown to someone else. Said in the label as well as in
+  // the stroke, because a dash pattern alone needs a legend to decode and this
+  // is the claim a reader is most likely to want to discount.
+  const inferred = [];
+  edges.forEach((e, i) => { if (e.source === "inferred") inferred.push(i); });
+  for (const e of edges) {
+    const label = e.source === "inferred" ? e.kind + "?" : e.kind;
+    lines.push(`  ${mid(e.from)} -->|${mlabel(label)}| ${mid(e.to)}`);
+  }
+
+  const css = getComputedStyle(document.documentElement);
+  const stroke = { "depends-on": css.getPropertyValue("--block").trim(),
+                   "part-of": css.getPropertyValue("--active").trim() };
+  for (const [kind, idx] of Object.entries(byKind)) {
+    if (!stroke[kind]) continue;
+    const dash = kind === "part-of" ? ",stroke-dasharray:3 3" : "";
+    lines.push(`  linkStyle ${idx.join(",")} stroke:${stroke[kind]},stroke-width:1.6px${dash};`);
+  }
+  // After the per-kind styles so it wins, and repeating the kind's stroke
+  // because a later linkStyle replaces the whole declaration rather than
+  // merging into it — omitting the colour here would silently un-style the
+  // edge kind instead of qualifying it.
+  for (const i of inferred) {
+    const s = stroke[edges[i].kind];
+    lines.push(`  linkStyle ${i} ${s ? `stroke:${s},` : ""}stroke-width:1.2px,stroke-dasharray:2 4;`);
+  }
+
+  // Unclassed nodes otherwise keep mermaid's default lavender, which fights the
+  // palette. `default` is the class mermaid gives every node without one.
+  lines.push("  classDef default fill:" + css.getPropertyValue("--card2").trim() +
+             ",stroke:" + css.getPropertyValue("--line").trim() +
+             ",color:" + css.getPropertyValue("--ink").trim() + ";");
+  lines.push("  classDef done fill:" + css.getPropertyValue("--ok-bg").trim() +
+             ",stroke:" + css.getPropertyValue("--ok-line").trim() +
+             ",color:" + css.getPropertyValue("--ok").trim() + ";");
+  lines.push("  classDef dropped fill:transparent,stroke:" + css.getPropertyValue("--faint").trim() +
+             ",color:" + css.getPropertyValue("--faint").trim() + ",stroke-dasharray:4 3;");
+  lines.push("  classDef context fill:transparent,stroke:" + css.getPropertyValue("--line").trim() +
+             ",color:" + css.getPropertyValue("--faint").trim() + ";");
+  // Dotted rather than dashed, so it does not read as `dropped` — the two mean
+  // opposite things about whether the reader should care.
+  lines.push("  classDef external fill:transparent,stroke:" + css.getPropertyValue("--faint").trim() +
+             ",color:" + css.getPropertyValue("--muted").trim() + ",stroke-dasharray:1 4;");
+  for (const cls of [...nsUsed].sort()) lines.push(nsClassDef(cls, css));
+
+  return lines.join("\n");
+}
+
+// Last fold result select() produced. showDetail reads group from here so the
+// panel agrees with the labels even when a search ran without a full redraw.
+let lastFolds = { group: new Map() };
+
+function showDetail(n) {
+  const d = document.getElementById("detail");
+  // On a phone the panel is a sheet that slides up, so selecting a node is what
+  // summons it. Without this the panel updated below the fold and the tap read
+  // as having done nothing.
+  document.body.classList.toggle("has-detail", !!n);
+  if (!n) { d.className = "empty"; d.textContent = "Click a node."; return; }
+  d.className = "";
+  // A stub has no title, kind, state, refs or dates. Saying so is the whole
+  // point of drawing it, so the panel says it rather than inventing defaults.
+  if (n.external) {
+    d.innerHTML = `<dl>
+      <dt>id</dt><dd><code>${esc(short(n.id))}</code></dd>
+      <dt>namespace</dt><dd>${esc(n.ns || "unknown")}</dd>
+      <dt>outside</dt><dd>This page was built from <code>${esc(SCOPE)}</code> alone.
+        This node is the far end of an edge that leaves it \u2014 everything else
+        about it is in the full graph.</dd>
+    </dl>`;
+    return;
+  }
+  const refs = (n.refs || []).map(refHTML).join("<br>") || "&mdash;";
+  const state = ["open", "done", "dropped"].includes(n.state) ? n.state : "open";
+  // "Who is already on this" is the question this panel could not answer, and
+  // the claim most worth seeing is the one somebody *inferred* about a third
+  // party — which is exactly the one a reader has to be able to discount. So
+  // the holder leads and the source rides beside it, rather than the source
+  // being dropped as detail.
+  const claims = (n.claims || []).length ? `<dt>claimed</dt><dd>${n.claims.map(c => {
+    // An expired claim is what abandoned work looks like, so it is shown rather
+    // than filtered — hiding it makes abandoned indistinguishable from
+    // unclaimed (SPEC §4.3). But showing it unmarked is the same failure in the
+    // other direction: it reads as somebody currently on the job. Marked and
+    // dimmed, matching what `weft show` prints for the same claim.
+    const gone = expiredClaim(c.expires);
+    const marks = [];
+    if (c.source && c.source !== "asserted") marks.push(`<span class="src">${esc(c.source)}</span>`);
+    if (gone) {
+      const since = age(c.expires);
+      marks.push(`<span class="src expired">expired${since ? " " + esc(since) : ""}</span>`);
+    }
+    if (c.by && c.by !== c.holder) marks.push(`<span class="obs">per ${esc(c.by)}</span>`);
+    // The claim's own age is noise once it has expired: how long ago someone
+    // took it matters less than the fact that they never came back.
+    const when = gone ? "" : age(c.at);
+    const note = c.note ? `<br><span class="obs">${esc(trunc(c.note, 90))}</span>` : "";
+    return `<span class="${gone ? "lapsed" : ""}"><code>${esc(c.holder)}</code> ` +
+           `${marks.join(" ")}${when ? ` <span class="obs">${esc(when)}</span>` : ""}${note}</span>`;
+  }).join("<br>")}</dd>` : "";
+  const dates = ageLine(n);
+  // Unfolding is a button here rather than a click on the box, because clicking
+  // a box already means "show me this one" and one gesture cannot mean both.
+  // Only children in the current selection: a global list would disagree with
+  // the "+N folded" label under a filter, and would offer an unfold that
+  // changes nothing when every child is already filtered out.
+  const kids = lastFolds.group.get(n.id) || [];
+  const open = UNFOLDED.has(n.id);
+  const group = kids.length ? `<dt>grouped</dt><dd>${kids.length} children
+      <button type="button" class="fold-toggle" data-id="${esc(n.id)}">${open ? "fold" : "unfold"}</button>
+      <br>${kids.map(id => `<code>${esc(short(id))}</code> ${esc(trunc((byId.get(id) || {}).title || "", 44))}`).join("<br>")}</dd>` : "";
+  // The node's own provenance, present only under --include source. Rendered
+  // the way claims render theirs, because it answers the same question: an
+  // agent told to mark its guesses with --source inferred has to be able to
+  // see the mark here, or the loop the by/source fold fix closed (a source
+  // written but unreadable) reopens in the viewer.
+  const prov = n.source ? `<dt>source</dt><dd><span class="src">${esc(n.source)}</span>` +
+    `${n.by ? ` <span class="obs">per ${esc(n.by)}</span>` : ""}</dd>` : "";
+  d.innerHTML = `<dl>
+    ${group}
+    <dt>title</dt><dd>${esc(n.title)}</dd>
+    <dt>state</dt><dd><span class="pill ${state}">${esc(n.state)}</span>
+      <span class="chip">${esc(n.kind)}</span></dd>
+    <dt>namespace</dt><dd>${esc(n.ns)}</dd>
+    ${prov}
+    ${dates ? `<dt>age</dt><dd>${esc(dates)}</dd>` : ""}
+    ${claims}
+    <dt>refs</dt><dd>${refs}</dd>
+    <dt>id</dt><dd><code>${esc(n.id)}</code></dd>
+    <dt>address it</dt><dd><code>weft show ${esc(short(n.id))}</code></dd>
+  </dl>`;
+}
+
+// Fit bounds the drawing by height as well as width, so the height available
+// below the chrome has to be measured rather than guessed — the header wraps at
+// narrow widths and the legend is another row.
+//
+// Measured from the pane's own top edge rather than by adding up the chrome
+// above it. Summing the parts needs a constant for whatever is left over, and a
+// constant is wrong on every screen but the one it was picked on: the 36 that
+// used to stand here was the desktop pane's padding, so at narrow widths, where
+// the padding is 10, it silently left 36px of the screen unused below the graph.
+// An element's own top is the same number without a term to keep in step.
+//
+// Two variables because they are two different quantities and one was being
+// asked to be both: --pane-h is the height of the pane element (border-box, so
+// it includes its padding), --fit-h the height left for the drawing inside it.
+function measureChrome() {
+  const g = document.getElementById("graph");
+  const cs = getComputedStyle(g);
+  const pane = window.innerHeight - g.getBoundingClientRect().top;
+  const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const root = document.documentElement.style;
+  root.setProperty("--pane-h", pane + "px");
+  root.setProperty("--fit-h", (pane - pad) + "px");
+}
+
+let renderSeq = 0;
+let lastDef = null;
+async function draw() {
+  // Before the unchanged-definition check below: toggling a control that leaves
+  // the drawing alone still changed the view, and a link that omitted it would
+  // not reproduce what the sender was looking at.
+  syncURL();
+  // After syncURL: with no renderer the controls still define the view, so a
+  // link copied from a page that cannot draw must carry it like any other.
+  if (!rendererLoaded()) return;
+
+  const def = buildDef();
+
+  // Several controls can leave the drawing untouched, and a relayout to produce
+  // the picture already on screen is the most expensive kind of no-op. The
+  // reachable case is `unconnected`: the isolated-node filter is only consulted
+  // when nothing is narrowing (see select()), so toggling it while a search or
+  // namespace filter is active is guaranteed to yield this same definition.
+  if (def === lastDef) return;
+
+  const seq = ++renderSeq;
+  const target = document.getElementById("graph");
+  try {
+    const { svg } = await mermaid.render("m" + seq, def);
+    if (seq !== renderSeq) return; // a newer keystroke already won
+    target.innerHTML = svg;
+    lastDef = def;
+  } catch (err) {
+    target.innerHTML = `<p class="empty">mermaid could not render this graph: ${esc(err.message || err)}</p>`;
+    lastDef = null; // the screen no longer shows `def`, so do not skip redrawing it
+    return;
+  }
+  target.querySelectorAll("g.node").forEach(g => {
+    // Mermaid ids look like "m1-flowchart-n9c4bab2acb8f-0". Matching our own
+    // mid() shape is stable; splitting on "-" and indexing is not, because the
+    // surrounding segments belong to mermaid and have changed between versions.
+    const m = /-(n[0-9a-f]{12})-/.exec(g.id || "");
+    const n = m && byMid.get(m[1]);
+    if (!n) return;
+    g.style.cursor = "pointer";
+    g.addEventListener("click", () => {
+      target.querySelectorAll("g.node.hit").forEach(x => x.classList.remove("hit"));
+      g.classList.add("hit");
+      showDetail(n);
+    });
+  });
+  measureChrome();
+}
+
+// The default page loads mermaid from a CDN, so an offline open or a blocked
+// host leaves the global undefined. Saying why beats a blank pane, and the
+// remedy is a different page, not a retry. An inlined bundle that defines no
+// global is a different fault — the wrong file — and rebuilding in the mode
+// already used would not fix it.
+function rendererLoaded() {
+  if (typeof mermaid !== "undefined") return true;
+  document.getElementById("graph").innerHTML = MERMAID_SRC
+    ? `<p class="empty">Could not load the renderer from ${esc(MERMAID_SRC)}. ` +
+      "Offline, or the host is blocked? Rebuild the page with --self-contained.</p>"
+    : '<p class="empty">The inlined renderer defines no <code>mermaid</code> global. ' +
+      "Rebuild with --mermaid-js pointing at mermaid's UMD build, dist/mermaid.min.js.</p>";
+  return false;
+}
+
+function initMermaid() {
+  if (typeof mermaid === "undefined") return;
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.hasAttribute("data-theme") &&
+     matchMedia("(prefers-color-scheme: dark)").matches);
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "loose",
+    theme: dark ? "dark" : "default",
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis" },
+  });
+}
+
+// Namespaces come from the data, so the control lists exactly what is present
+// and cannot offer a scope that yields nothing.
+(function initNamespaces() {
+  const sel = document.getElementById("nsFilter");
+  const counts = {}, real = {};
+  for (const n of DATA.nodes) {
+    counts[n.ns] = (counts[n.ns] || 0) + 1;
+    real[n.ns] = (real[n.ns] || 0) + (n.external ? 0 : 1);
+  }
+  const opts = ['<option value="">all (' + DATA.nodes.length + ")</option>"];
+  for (const ns of Object.keys(counts).sort()) {
+    // A namespace present only as stubs is marked, or it reads as a namespace
+    // this page holds — and selecting it yields boxes with no titles, which
+    // looks like data loss rather than a scope boundary.
+    const mark = real[ns] ? "" : "\u2197 ";
+    opts.push(`<option value="${esc(ns)}">${mark}${esc(ns)} (${counts[ns]})</option>`);
+  }
+  sel.innerHTML = opts.join("");
+  if (INITIAL_NS && counts[INITIAL_NS]) sel.value = INITIAL_NS;
+})();
+
+// Say when the page is partial, and keep saying it. An absence in a scoped page
+// is not evidence of absence in the graph, and nothing else on screen tells the
+// two apart — which matters exactly because a scoped page is one built to send
+// to somebody who cannot check.
+(function initInferred() {
+  if (!DATA.edges.some(e => e.source === "inferred")) return;
+  document.getElementById("legendInferred").hidden = false;
+})();
+
+(function initScope() {
+  if (!SCOPE) return;
+  const stubs = DATA.nodes.filter(n => n.external).length;
+  const el = document.getElementById("scope");
+  el.textContent = "scoped to " + SCOPE + (stubs ? " \u00b7 " + stubs + " outside" : "");
+  el.hidden = false;
+  document.getElementById("legendExternal").hidden = false;
+})();
+
+// View state lives in the URL, so one artifact serves every scope instead of a
+// file per audience — the export is whole-store anyway (an edge may cross
+// namespaces), so a second page would only ever differ by which control it
+// opened on. It also makes a view sendable: "look at this filter" is a link
+// rather than a description of which dropdowns to set.
+//
+// The fragment carries it, not the query string, because these pages are opened
+// over file:// as often as over http, and history.replaceState throws on a null
+// origin. A fragment is also never sent to a server, which suits state that is
+// nobody's business but the reader's.
+function readURLState() {
+  // Accept a query string too, so a hand-written ?ns=... link still works; the
+  // fragment wins because that is what the page writes.
+  const merged = new URLSearchParams(location.search);
+  for (const [k, v] of new URLSearchParams(location.hash.replace(/^#/, ""))) {
+    merged.set(k, v);
+  }
+  return merged;
+}
+
+// Every control is derived from the fragment, with no "leave it alone" branch.
+// Applying only the keys that are present looks equivalent and is not: going
+// back from a link that forced a theme then found nothing to apply, so the
+// forced theme stayed and the reader never got their own setting back.
+function applyURLState() {
+  const p = readURLState();
+
+  // A scope naming a namespace this graph does not hold leaves the select on
+  // "all" rather than erroring — a stale link should degrade, not break
+  // (SPEC.md §9.3). With no scope in the URL the build-time default applies.
+  const sel = document.getElementById("nsFilter");
+  const wanted = p.has("ns") ? p.get("ns") : INITIAL_NS;
+  sel.value = [...sel.options].some(o => o.value === wanted) ? wanted : "";
+  document.getElementById("q").value = p.get("q") || "";
+  document.getElementById("showDropped").checked = p.get("dropped") === "1";
+  document.getElementById("showIsolated").checked = p.get("unconnected") === "1";
+  document.getElementById("foldGroups").checked = p.get("fold") !== "0";
+  // Bare `#help` opens it too, so the link to send a new reader is short.
+  setHelp(p.has("help") && p.get("help") !== "0");
+
+  // Exceptions are prefix-addressed, like every id in weft, so a link stays
+  // short. One that no longer resolves — the node merged, or this export does
+  // not hold it — is dropped rather than breaking the page (SPEC.md §9.3).
+  UNFOLDED.clear();
+  for (const pre of (p.get("unfold") || "").split(",")) {
+    if (!pre) continue;
+    const hit = DATA.nodes.filter(n => n.id.startsWith(pre));
+    if (hit.length === 1) UNFOLDED.add(hit[0].id);
+  }
+
+  press("dir", p.get("dir") || "LR");
+  // Spelled like the control; `color` is read too, since it is the spelling
+  // a hand-typed link most often uses.
+  press("colour", (p.get("colour") || p.get("color")) === "ns" ? "ns" : "state");
+  if (p.get("theme") === "light" || p.get("theme") === "dark") {
+    document.documentElement.setAttribute("data-theme", p.get("theme"));
+    press("theme", p.get("theme"));
+  } else {
+    // Cleared, not merely left alone: navigating back from a link that forced a
+    // theme has to give the reader's own OS preference back.
+    document.documentElement.removeAttribute("data-theme");
+    press("theme", "auto");
+  }
+  const zoom = p.get("zoom");
+  if (zoom === "fit") {
+    press("zoom", "fit");
+    applyZoom(100, true);
+  } else if (zoom && +zoom >= 20 && +zoom <= 300) {
+    press("zoom", zoom);
+    applyZoom(+zoom, false);
+  } else {
+    // A phone opens zoomed enough to read rather than fitting the whole graph
+    // into a 390px column, where every label is too small to be worth drawing.
+    // The pane scrolls, so panning is a drag. An explicit zoom in a link wins
+    // above: that is the sender's choice, not this default's.
+    const fallback = narrow() ? 200 : 100;
+    press("zoom", String(fallback));
+    applyZoom(fallback, false);
+  }
+}
+
+// press moves a segmented control to a value, ignoring one it does not offer.
+function press(group, value) {
+  if (!value) return;
+  const buttons = document.querySelectorAll(`#${group} button`);
+  if (![...buttons].some(b => b.dataset.v === value)) return;
+  buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === value)));
+}
+
+// The fragment syncURL last assigned on file://, so the hashchange it fires is
+// recognised as the page's own write rather than navigation.
+let selfWrittenHash = null;
+
+function syncURL() {
+  const p = new URLSearchParams();
+  const q = document.getElementById("q").value.trim();
+  const ns = document.getElementById("nsFilter").value;
+  if (ns) p.set("ns", ns);
+  if (q) p.set("q", q);
+  if (document.getElementById("showDropped").checked) p.set("dropped", "1");
+  if (document.getElementById("showIsolated").checked) p.set("unconnected", "1");
+  if (!document.getElementById("foldGroups").checked) p.set("fold", "0");
+  if (!document.getElementById("legendHelp").hidden) p.set("help", "1");
+  // Sorted, so the same view always produces the same link.
+  if (UNFOLDED.size) p.set("unfold", [...UNFOLDED].map(short).sort().join(","));
+  if (seg("dir") !== "LR") p.set("dir", seg("dir"));
+  if (seg("colour") === "ns") p.set("colour", "ns");
+
+  // Display mode rides along only when it was chosen. Writing it unconditionally
+  // would put "theme=light" in every link and override the recipient's own OS
+  // setting, which is the reader's call and not the sender's; the same goes for
+  // a zoom level that suits one screen.
+  if (seg("theme") !== "auto") p.set("theme", seg("theme"));
+  const z = zoomRange.disabled ? "fit" : String(zoomRange.value);
+  if (z !== "100") p.set("zoom", z);
+
+  const frag = p.toString();
+  const url = location.pathname + location.search + (frag ? "#" + frag : "#");
+  try {
+    history.replaceState(null, "", url);
+  } catch {
+    // file:// forbids replaceState. Assigning the fragment still updates the
+    // address bar, at the cost of a history entry.
+    if (location.hash.replace(/^#/, "") !== frag) {
+      location.hash = frag;
+      selfWrittenHash = location.hash; // read back: the browser normalises it
+    }
+  }
+
+  // The tab title says which scope is on screen. A page whose heading named one
+  // workstream while showing another is exactly the confusion this fixes.
+  document.title = ns ? BASE_TITLE + " \u2014 " + ns : BASE_TITLE;
+}
+
+// Search is the one control a human emits a burst of events from, and mermaid's
+// layout is neither cheap nor cancellable: renderSeq discards a superseded
+// result, but only after it has already blocked the main thread. Undebounced,
+// typing "bytecode" into a 136-node graph ran eight layouts, 1.7 s of main
+// thread in total, and threw 1.5 s of it away — and the keystrokes themselves
+// queued behind it, which is what makes the box feel slow rather than merely
+// late. Counts still update on every keystroke, so the page answers immediately
+// even though the drawing waits.
+//
+// The other three fire once per interaction, so they stay immediate; putting a
+// delay on a checkbox would only make it feel broken.
+const debounce = (fn, ms) => {
+  let t;
+  return () => { clearTimeout(t); t = setTimeout(fn, ms); };
+};
+
+// Below a typing gap this size the next keystroke is already on its way, so
+// laying out the intermediate query is work nobody sees.
+const drawSoon = debounce(draw, 150);
+
+// A continuous gesture — a wheel burst, a slider drag — writes the URL once it
+// settles rather than on every frame. On file:// syncURL cannot replaceState and
+// assigns location.hash instead, which makes a history entry each time, so an
+// undeferred wheel would bury the back button under a hundred zoom levels.
+const syncURLSoon = debounce(syncURL, 250);
+
+document.getElementById("q").addEventListener("input", () => { select(); drawSoon(); });
+["showDropped", "showIsolated", "foldGroups", "nsFilter"].forEach(id =>
+  document.getElementById(id).addEventListener("input", draw));
+
+// Delegated, because the detail panel's contents are replaced on every click.
+document.getElementById("detail").addEventListener("click", e => {
+  const b = e.target.closest("button.fold-toggle");
+  if (!b) return;
+  const id = b.dataset.id;
+  if (UNFOLDED.has(id)) UNFOLDED.delete(id); else UNFOLDED.add(id);
+  draw();
+  showDetail(byId.get(id));
+});
+
+onSeg("dir", draw);
+onSeg("colour", draw);
+
+// Zoom deliberately does not go through draw(). It changes no node, edge or
+// filter, so re-running mermaid would cost a visible relayout to produce the
+// same drawing at a different size — and would drop the current selection.
+const zoomRange = document.getElementById("zoomRange");
+const zoomVal = document.getElementById("zoomVal");
+
+// The slider's own bounds, so the wheel cannot reach a level the controls
+// cannot express — a zoom no control can show is a zoom nobody can undo.
+const ZOOM_MIN = +zoomRange.min, ZOOM_MAX = +zoomRange.max;
+
+function applyZoom(pct, fit, quiet) {
+  const g = document.getElementById("graph");
+  g.classList.toggle("fit", fit);
+  if (!fit) document.documentElement.style.setProperty("--zoom", pct / 100);
+  zoomRange.value = pct;            // programmatic; does not re-fire input
+  zoomRange.disabled = fit;         // fit is not a width multiple, so the slider has nothing to say
+  zoomVal.textContent = fit ? "fit" : pct + "%";
+  measureChrome();
+  // Zoom deliberately skips draw(), so it has to record itself. A wheel emits a
+  // burst, and on file:// syncURL falls back to assigning location.hash, which
+  // makes a history entry each time — so a continuous gesture defers it and
+  // writes once when the hand stops.
+  if (quiet) syncURLSoon(); else syncURL();
+}
+
+// What the drawing is actually scaled to right now. In fit mode that is not the
+// slider's value: fit is a bound rather than a multiple, so leaving it has to
+// start from what fit produced or the first wheel notch jumps to 100% and the
+// reader loses their place.
+function currentZoomPct() {
+  const g = document.getElementById("graph");
+  if (!g.classList.contains("fit")) {
+    // --zoom, not zoomRange.value. The slider has step="5", so assigning it
+    // snaps: the wheel asks for 133%, the control records 135%, and the drawing
+    // renders at 133%. Reading the control back made every following ratio wrong
+    // by the snap, and because zoomAt turns that ratio into a scroll offset the
+    // anchor slid further off with each event of a burst — which is felt as the
+    // graph scrolling vertically while it zooms, not as a zoom being slightly
+    // off. --zoom is what actually scaled the svg, so it cannot disagree with
+    // what is on screen. Same rule as the fit branch below, which measures for
+    // the same reason.
+    const z = parseFloat(getComputedStyle(document.documentElement)
+                           .getPropertyValue("--zoom"));
+    // Before the first zoom --zoom is unset and the stylesheet's var() fallback
+    // is what rendered, so the control is the only record there is.
+    return Number.isFinite(z) && z > 0 ? z * 100 : +zoomRange.value;
+  }
+  const svg = g.querySelector("svg");
+  if (!svg) return 100;
+  const cs = getComputedStyle(g);
+  const inner = g.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  // Deliberately unclamped. This is a measurement of what is on screen, not a
+  // level to move to: a big graph can fit below the slider's 20% floor, and
+  // reporting the floor instead would have zoomAt compute its ratio against a
+  // scale nobody is looking at, so the anchor point slips on the first notch
+  // out of fit. The caller clamps the target, which is the value that has to
+  // stay inside what the controls can express. Floored at 1 only to keep it a
+  // usable divisor.
+  return Math.max(1, Math.round(svg.getBoundingClientRect().width / inner * 100));
+}
+
+const clampZoom = p => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, p));
+
+// Zoom about a point, so the thing under the cursor stays under the cursor.
+// Zooming about the pane's origin instead is what makes a wheel feel like it is
+// fighting you: the label you leaned in to read slides off the edge.
+function zoomAt(pct, clientX, clientY) {
+  const g = document.getElementById("graph");
+  const from = currentZoomPct();
+  const r = g.getBoundingClientRect();
+  const cs = getComputedStyle(g);
+  const padL = parseFloat(cs.paddingLeft), padT = parseFloat(cs.paddingTop);
+  // The cursor in the drawing's own coordinates. Padding does not scale with
+  // the svg, so it comes out before the ratio and goes back in after.
+  const ax = clientX - r.left, ay = clientY - r.top;
+  const cx = ax + g.scrollLeft - padL, cy = ay + g.scrollTop - padT;
+
+  syncZoomChips(pct);
+  applyZoom(pct, false, true);
+
+  const ratio = pct / from;
+  g.scrollLeft = cx * ratio + padL - ax;
+  g.scrollTop = cy * ratio + padT - ay;
+}
+
+// A level the chips do not name unpresses all of them — unless it lands exactly
+// on one, where leaving it lit is the truth.
+function syncZoomChips(pct) {
+  document.querySelectorAll("#zoom button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.v === String(pct))));
+}
+
+onSeg("zoom", v => applyZoom(v === "fit" ? 100 : +v, v === "fit"));
+
+zoomRange.addEventListener("input", e => {
+  const pct = +e.target.value;
+  syncZoomChips(pct);
+  applyZoom(pct, false);
+});
+
+// The pane is a canvas: drag or scroll to pan, pinch to zoom. Drag is mouse-only
+// on purpose — touch already pans natively with momentum this cannot reproduce,
+// and capturing the pointer would replace it with something worse. Zoom is the
+// modal one: see the wheel handler below for why only ctrlKey qualifies.
+const pane = document.getElementById("graph");
+let drag = null, swallowClick = false;
+
+pane.addEventListener("pointerdown", e => {
+  // Cleared here rather than after use, so a suppression that never got its
+  // click — a drag ending off the pane, say — cannot eat an innocent later one.
+  swallowClick = false;
+  if (e.pointerType !== "mouse" || e.button !== 0) return;
+  drag = { x: e.clientX, y: e.clientY, left: pane.scrollLeft, top: pane.scrollTop, moved: false };
+});
+
+pane.addEventListener("pointermove", e => {
+  if (!drag) return;
+  // The gesture is over whenever no button is down, and this is the only place
+  // that can always tell. `drag` is otherwise cleared on pointerup, which is
+  // guaranteed to arrive only once the pane has captured the pointer — and the
+  // capture is taken below, after the slop threshold. So a press that never
+  // clears the threshold and lifts somewhere else leaves `drag` set with
+  // moved:false, and the next move over the pane measures from the original
+  // press, clears the threshold in one jump, and pans with nothing held. The
+  // slop threshold is the right rule; it just cannot also be what decides
+  // whether the gesture gets cleaned up.
+  if (!e.buttons) {
+    drag = null;
+    pane.classList.remove("panning");
+    return;
+  }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  // A few pixels of slop. Without it an unsteady hand turns selecting a node
+  // into a two-pixel pan, and the node never opens.
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  if (!drag.moved) {
+    drag.moved = true;
+    pane.classList.add("panning");
+    pane.setPointerCapture(e.pointerId);
+  }
+  pane.scrollLeft = drag.left - dx;
+  pane.scrollTop = drag.top - dy;
+});
+
+for (const ev of ["pointerup", "pointercancel"]) {
+  pane.addEventListener(ev, e => {
+    // A drag that ends over a node must not also select it.
+    if (drag && drag.moved) {
+      swallowClick = true;
+      if (pane.hasPointerCapture(e.pointerId)) pane.releasePointerCapture(e.pointerId);
+    }
+    drag = null;
+    pane.classList.remove("panning");
+  });
+}
+
+// Capture, so it runs before the per-node handlers draw() attaches.
+pane.addEventListener("click", e => {
+  if (!swallowClick) return;
+  swallowClick = false;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+
+// **Only a pinch zooms. A plain wheel is left alone.**
+//
+// A WheelEvent carries no device information — there is no `pointerType` on it,
+// the way there is on the pointer events the drag handler uses — so a mouse and
+// a trackpad are indistinguishable here. Zooming on any wheel therefore meant a
+// two-finger scroll zoomed while its sideways component fell through to the
+// browser and panned: on a tall graph, the gesture for scrolling down zoomed
+// out, and drifting fingers panned. Reported as "a weird mix of zoom and pan",
+// which is exactly what it was.
+//
+// What the event *does* carry is the gesture. Browsers set ctrlKey for a
+// trackpad pinch specifically, and it is the same key a mouse user holds to
+// zoom, so one rule serves both without guessing at hardware.
+//
+// A plain wheel gets no preventDefault at all, rather than a hand-rolled pan:
+// the pane is a scroll container, so the browser already pans it — with
+// momentum on a trackpad, which scripted scrolling cannot reproduce.
+// overscroll-behavior:contain keeps a scroll that reaches the edge off the page.
+//
+// deltaY is in pixels, lines or pages depending on the device; normalising is
+// what keeps a mouse notch and a trackpad pinch roughly comparable.
+const WHEEL_UNIT = [1, 16, 400];
+pane.addEventListener("wheel", e => {
+  // metaKey as well as ctrlKey, because the modifier a mac reader reaches for is
+  // command. A trackpad pinch arrives as ctrlKey whatever the platform — the
+  // browser synthesises it — so this adds the deliberate keypress, not the
+  // gesture. Shift is deliberately not here: browsers already turn shift+wheel
+  // into horizontal scroll, which is the sideways pan, and claiming it for zoom
+  // would take that away.
+  if ((!e.ctrlKey && !e.metaKey) || !e.deltaY) return;
+  // Only now, or the browser's own ctrl+wheel page zoom fires as well.
+  e.preventDefault();
+  const px = e.deltaY * (WHEEL_UNIT[e.deltaMode] || 1);
+  // Multiplicative, so a notch covers the same proportion at 30% as at 250%.
+  // Additive steps crawl when zoomed out and lurch when zoomed in.
+  const from = currentZoomPct();
+  const to = clampZoom(Math.round(from * Math.exp(-px * 0.0015)));
+  if (to === from && !pane.classList.contains("fit")) return;
+  zoomAt(to, e.clientX, e.clientY);
+}, { passive: false });
+
+// Two fingers zoom; one finger is not touched at all, so native scrolling keeps
+// the momentum this could not reproduce. That split is the whole design: the
+// desktop rule reads "plain gesture pans, deliberate one zooms", and pinch is
+// the deliberate one on a phone exactly as ctrl+wheel is on a desk.
+//
+// Scale is measured from the start of the gesture rather than accumulated
+// frame to frame. Multiplying per move compounds its own rounding, so fingers
+// returned to where they began leave the graph at a different zoom than it
+// started — the gesture stops being reversible, which is the thing that makes a
+// pinch feel broken rather than merely imprecise.
+let pinch = null;
+const twoFingers = t => t.length === 2;
+const fingerGap = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+const fingerMid = t => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
+
+pane.addEventListener("touchstart", e => {
+  if (!twoFingers(e.touches)) return;
+  const gap = fingerGap(e.touches);
+  // Two touches at one point have no gap to scale against, and dividing by it
+  // would send the zoom to infinity on the first move.
+  if (!gap) return;
+  pinch = { gap, from: currentZoomPct() };
+}, { passive: false });
+
+pane.addEventListener("touchmove", e => {
+  if (!pinch || !twoFingers(e.touches)) return;
+  const gap = fingerGap(e.touches);
+  if (!gap) return;
+  e.preventDefault();
+  const to = clampZoom(Math.round(pinch.from * gap / pinch.gap));
+  const [mx, my] = fingerMid(e.touches);
+  // Anchored at the midpoint between the fingers, which is the point the reader
+  // is pinching about — the same contract the wheel has with the cursor.
+  if (to !== currentZoomPct() || pane.classList.contains("fit")) zoomAt(to, mx, my);
+}, { passive: false });
+
+for (const ev of ["touchend", "touchcancel"]) {
+  // Lifting one finger of two ends the pinch rather than reinterpreting it: the
+  // remaining finger goes back to native scrolling, and a fresh touchstart is
+  // what begins the next gesture.
+  pane.addEventListener(ev, e => { if (!twoFingers(e.touches)) pinch = null; });
+}
+
+// Theme does need a redraw: mermaid bakes its palette in at initialize, so the
+// diagram would otherwise keep the old theme's colours against the new ground.
+onSeg("theme", v => {
+  if (v === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", v);
+  initMermaid();
+  draw();
+});
+
+// Narrow-screen affordances. The toggle folds the secondary controls away, and
+// the sheet needs a dismiss because it covers the graph it describes.
+const narrow = () => matchMedia("(max-width: 900px)").matches;
+const moreToggle = document.getElementById("moreToggle");
+const moreControls = document.getElementById("moreControls");
+
+function setMore(open) {
+  moreControls.classList.toggle("open", open);
+  moreToggle.setAttribute("aria-expanded", String(open));
+  // Unfolding grows the header, and the graph pane is sized from what the
+  // chrome leaves. Without this the pane keeps its old height and the page
+  // starts scrolling behind it — the thing bounding the pane exists to stop.
+  measureChrome();
+}
+moreToggle.addEventListener("click", () =>
+  setMore(moreToggle.getAttribute("aria-expanded") !== "true"));
+
+document.getElementById("detailClose").addEventListener("click", () => {
+  document.body.classList.remove("has-detail");
+  document.querySelectorAll("#graph g.node.hit").forEach(g => g.classList.remove("hit"));
+});
+
+addEventListener("resize", measureChrome);
+
+// The ? panel. Built from the legend's own spans each time it opens, so it
+// explains exactly the marks this page can draw: an entry hidden because the
+// export has no inferred edges, or the page is not scoped, is not explained
+// either. The search and control rows are fixed text, because nothing on the
+// page shows the search syntax at all.
+const SEARCH_HELP = [
+  ["<code>word</code>", "Matches title, kind, namespace, state, ref and claim holder. " +
+                        "Every word must match; matches bring their direct neighbours along as context."],
+  ["<code>!word</code>", "Excludes nodes matching it, even as context."],
+  ["<code>touched&lt;7d</code>", "Touched less than 7 days ago. <code>&gt;</code> for older. " +
+                                 "Units: h, d, w, m (months), y. <code>created</code> works the same way."],
+  ["<code>touched&gt;2026-10-01</code>", "A date instead of an age: touched on or after that day " +
+                                         "(<code>&lt;</code> for before it). Dates are fixed, so a link " +
+                                         "with one shows the same nodes whenever it is opened; an age moves with today."],
+  ["<code>!created&lt;2d</code>", "Any word can be negated, time words included."],
+];
+const CONTROL_HELP = [
+  ["ns", "Scope to one namespace. Cross-namespace neighbours still show as context. " +
+         "\u2197 marks a namespace present only as stubs."],
+  ["dropped", "Also draw dropped nodes."],
+  ["unconnected", "Also draw nodes with no edges. The counts line always says how many are hidden."],
+  ["grouped", "Fold part-of children into their parent. Click a folded parent to open it."],
+  ["colour", "<code>state</code> fills boxes by open, done and dropped; <code>ns</code> fills them " +
+             "by namespace group and names the group on each box."],
+  ["link", "The address bar holds the whole view (search, scope, layout, this panel), " +
+           "so copying it sends exactly what you see. <code>#help</code> opens this panel."],
+];
+
+function helpRow(term, text) {
+  return `<div class="row"><span class="term">${term}</span><span>${text}</span></div>`;
+}
+
+function renderHelp() {
+  const marks = [...document.querySelectorAll(".legend > span[data-help]")]
+    .filter(s => !s.hidden)
+    .map(s => helpRow(s.innerHTML, esc(s.dataset.help)));
+  document.getElementById("legendHelp").innerHTML =
+    "<h3>Marks</h3>" + marks.join("") +
+    "<h3>Search</h3>" + SEARCH_HELP.map(([t, d]) => helpRow(t, d)).join("") +
+    "<h3>Controls</h3>" + CONTROL_HELP.map(([t, d]) => helpRow(t, d)).join("");
+}
+
+function setHelp(open) {
+  const panel = document.getElementById("legendHelp");
+  if (open) renderHelp();
+  panel.hidden = !open;
+  document.getElementById("helpToggle").setAttribute("aria-expanded", String(open));
+  // The panel changes the header's height, and the graph pane is sized from it.
+  measureChrome();
+}
+
+document.getElementById("helpToggle").addEventListener("click", () => {
+  setHelp(document.getElementById("legendHelp").hidden);
+  syncURL();
+});
+
+// A link is a view, so the back button should move between views. Re-reading
+// the fragment is enough — every control is derived from it. The fragment
+// syncURL itself just wrote is skipped: on file:// writing it fires this event,
+// and re-applying a state the page is already in re-initialises mermaid for
+// nothing on every control change.
+addEventListener("hashchange", () => {
+  if (location.hash === selfWrittenHash) {
+    selfWrittenHash = null; // one-shot: back then forward to it must still apply
+    return;
+  }
+  selfWrittenHash = null;
+  applyURLState(); initMermaid(); draw();
+});
+
+setMore(!narrow());
+applyURLState();
+initMermaid();
+draw();
+</script>
+</body>
+</html>

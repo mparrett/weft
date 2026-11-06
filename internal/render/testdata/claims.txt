@@ -1,0 +1,6 @@
+
+  claimed by
+    user:matt  (asserted)  starting now
+    user:colleague  (inferred, per agent:scanner)
+    agent:gone  (asserted, expired)
+    user:forever  (asserted)

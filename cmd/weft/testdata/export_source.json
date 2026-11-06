@@ -1,0 +1,62 @@
+{
+  "nodes": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ns": "acme/api",
+      "kind": "bug",
+      "title": "N+1 in report generation",
+      "state": "open",
+      "by": "agent:scanner",
+      "source": "inferred",
+      "refs": [
+        "gh:acme/api#412"
+      ],
+      "created": "2026-07-30T09:15:00Z",
+      "touched": "2026-08-04T17:40:30Z"
+    },
+    {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ns": "acme/api",
+      "kind": "spec",
+      "title": "the \"batch export\" spec\\draft",
+      "state": "done",
+      "by": "user:matt",
+      "source": "asserted",
+      "refs": [
+        "file:docs/export.md",
+        "pr:acme/api#77"
+      ],
+      "created": "2026-07-30T09:15:00Z",
+      "touched": "2026-07-30T09:15:00Z"
+    },
+    {
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "ns": "other/fork",
+      "kind": "finding",
+      "title": "review point Z",
+      "state": "dropped"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "conflicts-with",
+      "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "to": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "kind": "depends-on",
+      "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "to": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "kind": "depends-on",
+      "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "to": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "kind": "part-of",
+      "from": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "to": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

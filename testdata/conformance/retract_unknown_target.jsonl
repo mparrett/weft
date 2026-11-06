@@ -1,0 +1,2 @@
+{"at":"2026-07-31T09:14:22Z","body":null,"by":"user:test","ev":"node.add","id":"1111111111111111111111111111111111111111111111111111111111111111","kind":"bug","ns":"test","source":"asserted","title":"a","v":1}
+{"at":"2026-07-31T09:14:22Z","by":"user:test","ev":"edge.retract","id":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","source":"asserted","target":"0000000000000000000000000000000000000000000000000000000000000000","v":1}

@@ -1,0 +1,56 @@
+name: ci
+
+# Runs on every push and PR. Linux only: it catches essentially everything in
+# pure Go. It is a portability canary, not a
+# support commitment — see BUILD.md §1.3.
+#
+# macOS is the v0 target and is verified locally, not here. Run the oracle
+# before pushing; CI does not cover the target platform.
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Steps stay granular for legible failures, but each one goes through the
+      # Makefile so the documented build is the build that gets exercised.
+      - name: vet
+        run: make vet
+
+      - name: build
+        run: make build
+
+      # The stamp is the whole reason the Makefile exists, and it fails silently:
+      # an unstamped binary works perfectly and simply cannot say what it is.
+      - name: version is stamped
+        run: |
+          v=$(./dist/weft --version)
+          echo "$v"
+          case "$v" in
+            0.0.0-dev*) echo "the build did not apply -ldflags"; exit 1 ;;
+          esac
+
+      - name: test
+        run: make test
+
+      # tools/ is outside the Go build, so `make test` never touched it and a
+      # green check on a viewer change said nothing about the viewer's own
+      # suites. Caught in review, not by anything failing — which is the point:
+      # coverage that no job runs looks identical to coverage that passes.
+      #
+      # No setup-python step: the suites are stdlib-only and ubuntu-latest ships
+      # a python3, so pinning one would add a download to buy nothing.
+      - name: tools tests
+        run: |
+          python3 --version
+          make test-tools
+
+      - name: smoke
+        run: ./smoke.sh

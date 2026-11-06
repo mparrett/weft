@@ -1,0 +1,31 @@
+{
+  "nodes": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ns": "acme/api",
+      "kind": "bug",
+      "title": "N+1 in report generation",
+      "state": "open",
+      "by": "agent:scanner",
+      "source": "inferred"
+    },
+    {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ns": "acme/api",
+      "kind": "spec",
+      "title": "batch export spec",
+      "state": "open",
+      "refs": [
+        "file:docs/export.md",
+        "gh:acme/api#412"
+      ]
+    },
+    {
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "ns": "acme/api",
+      "kind": "finding",
+      "title": "review point Z",
+      "state": "done"
+    }
+  ]
+}

@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>weft — an advanced walkthrough</title>
+<!--
+  The sequel to getting-started.html: same store, same loop, but the parts that
+  only show up once two repositories, several agents and a week of drift are
+  involved.
+
+  Self-contained on purpose: no CDN, no build step, no fonts fetched at open
+  time (BUILD.md §1.1).
+
+  Every command shown here was run in order against a real store and its output
+  pasted back. `cmd/weft/advanced_test.go` re-runs the whole sequence against a
+  scratch store, substituting this page's node ids for the ones each run
+  produces, and checks the exit code annotated on each line — including the
+  three that are meant to fail.
+-->
+<style>
+  :root{
+    --bg:#fbfbfa; --card:#fff; --card2:#f4f4f2; --ink:#1c1c1a; --muted:#5f5f5a;
+    --faint:#8a8a83; --line:#e2e2dd; --accent:#3b5bdb; --ok:#2f7a3f; --ok-bg:#e8f5e9;
+    --block:#c62828; --code:#f6f6f4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#151513; --card:#1d1d1b; --card2:#232320; --ink:#eceae4; --muted:#a5a49c;
+      --faint:#77766e; --line:#33332e; --accent:#8da2fb; --ok:#7bc98a; --ok-bg:#1e2f22;
+      --block:#f28b82; --code:#1a1a18;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 96px;}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:34px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em;}
+  .sub{color:var(--muted);margin:0;}
+  h2{font-size:19px;margin:44px 0 10px;letter-spacing:-.01em;}
+  h2 .n{display:inline-block;min-width:26px;color:var(--faint);font-variant-numeric:tabular-nums;}
+  p{margin:0 0 14px;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+       background:var(--code);padding:1px 5px;border-radius:4px;border:1px solid var(--line);}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+      padding:14px 16px;overflow-x:auto;margin:0 0 16px;}
+  pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.6;}
+  .cmd{color:var(--accent);font-weight:600;}
+  .out{color:var(--muted);}
+  .err{color:var(--block);}
+  .note{border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:0 0 16px;
+        color:var(--muted);font-size:14px;}
+  .note strong{color:var(--ink);}
+  .why{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+       padding:14px 16px;margin:0 0 16px;font-size:14px;}
+  .why b{color:var(--ink);}
+  .cast{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+        padding:14px 16px 4px;margin:0 0 16px;font-size:14px;}
+  a{color:var(--accent);}
+  table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:13.5px;display:block;overflow-x:auto;}
+  th,td{text-align:left;padding:6px 12px 6px 0;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--faint);font-weight:600;}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:13px;}
+  ul{margin:0 0 14px;padding-left:20px;} li{margin-bottom:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>weft, past the basics</h1>
+  <p class="sub">Two repositories, several agents, and a week of drift — merges,
+  blast radius, routes, inferred claims, retractions, and what the tool refuses
+  to do.</p>
+</header>
+
+<p><a href="getting-started.html">Getting started</a> covers the loop: assert,
+connect, ask what is startable, record state. This picks up where it stops, on
+the graph you actually end up with once more than one person and more than one
+repository are writing to it. Every command below was run in order against an
+empty store and the output is what it printed — including the three commands
+near the end that fail on purpose.</p>
+
+<div class="cast">
+  <p><b>The scenario.</b> Batch export v2 spans two repos. In
+  <code>acme/api</code>: an epic, a spec, an N+1 bug already filed as
+  <code>#412</code>, and the task to extract the report query. In
+  <code>acme/web</code>: the progress panel that cannot ship before the spec
+  settles, and someone else's rate-limit PR that touches the same middleware.
+  An agent has been reading the repo and asserting what it finds.</p>
+</div>
+
+<h2><span class="n">1.</span> Two repos, one graph</h2>
+<p>There is one store, not one per repository. The namespace is a field on the
+node, so a node in <code>acme/web</code> can depend on one in
+<code>acme/api</code> with no special case anywhere.</p>
+<pre><code><span class="cmd">$ weft ns</span>
+<span class="out">acme/api        (WEFT_NS)</span>
+
+<span class="cmd">$ weft add "batch export v2" --kind task</span>
+<span class="out">0576d6a  batch export v2  [acme/api]</span>
+
+<span class="cmd">$ weft add "batch export spec" --kind spec --ref file:docs/export.md</span>
+<span class="out">8baa619  batch export spec  [acme/api]</span>
+
+<span class="cmd">$ weft add "N+1 in report generation" --kind bug --ref gh:acme/api#412</span>
+<span class="out">6413156  N+1 in report generation  [acme/api]</span>
+
+<span class="cmd">$ weft add "extract report query" --kind task</span>
+<span class="out">2d7e850  extract report query  [acme/api]</span>
+
+<span class="cmd">$ weft add "export progress panel" --kind task --ns acme/web</span>
+<span class="out">8aa903a  export progress panel  [acme/web]</span>
+
+<span class="cmd">$ weft add "rate-limit middleware" --kind pr --ns acme/web --source observed</span>
+<span class="out">6c66798  rate-limit middleware  [acme/web]</span></code></pre>
+<p>Every query defaults to the current namespace. <code>--all-ns</code> is how
+you see the whole thing, and it prints the namespace column that the
+single-namespace listing leaves out.</p>
+<pre><code><span class="cmd">$ weft ls --all-ns</span>
+<span class="out">0576d6a  acme/api  task  batch export v2
+8baa619  acme/api  spec  batch export spec
+6413156  acme/api  bug   N+1 in report generation
+2d7e850  acme/api  task  extract report query
+8aa903a  acme/web  task  export progress panel
+6c66798  acme/web  pr    rate-limit middleware</span></code></pre>
+<div class="why"><b>The last one is somebody else's PR.</b> <code>--source
+observed</code> says weft is recording something that exists in the world rather
+than asserting new work. The three values — <code>asserted</code>,
+<code>observed</code>, <code>inferred</code> — are what let you read a graph
+that is roughly half inference without having to trust all of it equally.</div>
+
+<h2><span class="n">2.</span> When two writers assert the same work</h2>
+<p>This is the normal case with agents, not an edge case. Node ids are event
+hashes, so two assertions of the same work are two nodes — deciding they are the
+same is a judgement, and weft makes you make it. There is a way to avoid the
+problem and a way to fix it afterwards.</p>
+<p><code>--if-absent</code> is the avoidance: reuse the earliest live node with
+this exact title in this namespace, otherwise create one. The write becomes
+idempotent, which is what a scheduled job or a re-running agent needs.</p>
+<pre><code><span class="cmd">$ weft add "batch export spec" --kind spec --if-absent</span>
+<span class="out">8baa619  batch export spec  [acme/api]</span>   <span class="out"># the id from step 1, not a new one</span></code></pre>
+<p>It only matches an exact title, so it does nothing for the case that actually
+happens: an agent phrases it differently.</p>
+<pre><code><span class="cmd">$ weft add "extract the report query" --kind task --source inferred</span>
+<span class="out">e277ad7  extract the report query  [acme/api]</span>
+
+<span class="cmd">$ weft merge 2d7e850 e277ad7</span>
+<span class="out">2d7e850 merged e277ad7</span></code></pre>
+<p>The first argument survives. The second keeps resolving — anything already
+holding the merged id, a script, a branch name, an agent halfway through a task,
+lands on the survivor rather than on nothing.</p>
+<pre><code><span class="cmd">$ weft show e277ad7</span>
+<span class="out">2d7e850  task  extract report query
+  ns     acme/api
+  state  open
+  source asserted, per user:you
+  age    created just now, touched just now
+  merged e277ad7  extract the report query</span></code></pre>
+<div class="note"><strong>There is no <code>merge --undo</code>, and the absence is
+deliberate.</strong> Undoing a merge is not bookkeeping: events that landed on
+the survivor afterwards would have to go back to the node they named, which
+needs replay. Merge when you are sure. <code>EVENTS.md</code> §3.7 records the
+reasoning.</div>
+
+<h2><span class="n">3.</span> A blocker in another repository</h2>
+<pre><code><span class="cmd">$ weft link 2d7e850 depends-on 8baa619</span>
+<span class="out">2d7e850 depends-on 8baa619</span>
+
+<span class="cmd">$ weft link 2d7e850 depends-on 6413156</span>
+<span class="out">2d7e850 depends-on 6413156</span>
+
+<span class="cmd">$ weft link 8aa903a depends-on 8baa619</span>
+<span class="out">8aa903a depends-on 8baa619</span>
+
+<span class="cmd">$ weft link 2d7e850 part-of 0576d6a</span>
+<span class="out">2d7e850 part-of 0576d6a</span>
+
+<span class="cmd">$ weft link 8aa903a part-of 0576d6a</span>
+<span class="out">8aa903a part-of 0576d6a</span>
+
+<span class="cmd">$ weft link 8aa903a conflicts-with 6c66798 --source inferred</span>
+<span class="out">8aa903a conflicts-with 6c66798</span></code></pre>
+<p>The third of those crosses a repository boundary, and the fourth conflict edge
+is a guess — the agent noticed both touch the same middleware and said so, marked
+as a guess. Now ask the web repo what it can start:</p>
+<pre><code><span class="cmd">$ weft ls --ready --ns acme/web</span>
+<span class="out">6c66798  pr  rate-limit middleware</span>
+
+<span class="cmd">$ weft why 8aa903a</span>
+<span class="out">8aa903a  export progress panel
+
+blocked by
+
+  8baa619  spec  batch export spec  [acme/api]</span></code></pre>
+<div class="why"><b>A namespace filter selects which nodes come back, never how far
+the walk goes.</b> The panel is in <code>acme/web</code> and its blocker is not,
+so a tool that filtered before walking would have called it ready. That is the
+failure mode worth knowing about: it does not error, it just quietly tells you
+to start something you cannot finish. <code>why</code> names the blocker's
+namespace for the same reason (<code>SPEC.md</code> §5).</div>
+<pre><code><span class="cmd">$ weft ls --blocked --all-ns</span>
+<span class="out">2d7e850  acme/api  task  extract report query
+8aa903a  acme/web  task  export progress panel</span></code></pre>
+
+<h2><span class="n">4.</span> Blast radius, before you touch anything</h2>
+<p><code>why</code> looks down at what is stopping you. <code>rdeps</code> looks
+up at who is waiting on you — the question to ask before you change a spec,
+retitle a task, or mark something dropped.</p>
+<pre><code><span class="cmd">$ weft rdeps 8baa619</span>
+<span class="out">2d7e850  task  extract report query
+8aa903a  task  export progress panel  [acme/web]
+via: depends-on (the default; --via walks other kinds)</span></code></pre>
+<p>It walks <code>depends-on</code> transitively by default. <code>--via</code>
+walks a different kind — <code>part-of</code> turns the same command into "what
+is in this epic" without a container type existing anywhere in the model. A
+widened walk lists what is <em>reachable</em> rather than what waits, so each
+row names the relation it was reached through:</p>
+<pre><code><span class="cmd">$ weft rdeps 0576d6a --via part-of</span>
+<span class="out">2d7e850  task  extract report query  (part of)
+8aa903a  task  export progress panel  (part of)  [acme/web]
+via: part-of</span>
+
+<span class="cmd">$ weft rdeps 6413156 --depth 1</span>
+<span class="out">2d7e850  task  extract report query
+via: depends-on (the default; --via walks other kinds)</span></code></pre>
+<div class="note"><strong>Every traversal prints the kinds it walked.</strong> An empty
+result and an empty result <em>for the kind you forgot to ask about</em> look
+identical otherwise, and the second one is a wrong answer wearing the costume of
+a right one.</div>
+
+<h2><span class="n">5.</span> How are these two things related?</h2>
+<p>Someone asks whether the panel is affected by bug #412. They are in different
+repos with nothing obviously between them. <code>path</code> answers with the
+route:</p>
+<pre><code><span class="cmd">$ weft path 8aa903a 6413156</span>
+<span class="out">8aa903a  export progress panel
+  depends on 8baa619  batch export spec  [acme/api]
+  blocks 2d7e850  extract report query  [acme/api]
+  depends on 6413156  N+1 in report generation  [acme/api]
+via: depends-on, conflicts-with, part-of, supersedes, derived-from, same-as (all kinds; --via restricts; either direction; --dir restricts)</span></code></pre>
+<p>Read the middle hop: the route goes <em>up</em> the spec and back down through
+the query task. By default <code>path</code> crosses edges in either direction,
+because "how do these relate" is rarely a question about arrow direction.
+<code>--dir out</code> asks the stricter question — does a lead to b, following
+arrows only:</p>
+<pre><code><span class="cmd">$ weft path 2d7e850 0576d6a --dir out --via part-of</span>
+<span class="out">2d7e850  extract report query
+  part of 0576d6a  batch export v2
+via: part-of (forwards only)</span>
+
+<span class="cmd">$ weft path 0576d6a 2d7e850 --dir out --via part-of</span>
+<span class="out">no known route from 0576d6a to 2d7e850
+via: part-of (forwards only)</span></code></pre>
+<p>The same two nodes, the same edge, opposite answers — which is the point of
+having the flag. Note the wording: <em>no known route</em>. A graph is a record
+of what somebody wrote down, never a claim about the world.</p>
+
+<h2><span class="n">6.</span> Claims about other people, and claims nobody came back to</h2>
+<p>Claims are advisory: they do not lock, and two live claims on one node is a
+reported condition rather than an error. That is what makes it safe to record a
+claim on someone else's behalf — an inference from a PR being open, which may
+simply be wrong.</p>
+<pre><code><span class="cmd">$ weft claim 6413156 --holder user:dana --source inferred --ttl 2s --note "PR open, no reviewer"</span>
+<span class="out">6413156 claimed by user:dana</span>
+
+<span class="cmd">$ weft show 6413156</span>
+<span class="out">6413156  bug  N+1 in report generation
+  ns     acme/api
+  state  open
+  source asserted, per user:you
+  age    created just now, touched just now
+  refs   gh:acme/api#412
+
+  claimed by
+    user:dana  (inferred, per user:you)  PR open, no reviewer
+
+  blocks
+    2d7e850  task  extract report query</span></code></pre>
+<div class="why"><b><code>(inferred, per user:you)</code> is the whole feature.</b>
+Dana never said this. Anyone reading the graph can see that it is your guess
+about Dana rather than Dana's word, which is the difference between a note that
+gets trusted and one that gets ignored.</div>
+<p>Claims expire — the default TTL is seven days. The two-second TTL above is so
+this page can show you the sweep without a week passing:</p>
+<pre><code><span class="cmd">$ sleep 3</span>
+
+<span class="cmd">$ weft ls --stale --all-ns</span>
+<span class="out">6413156  acme/api  bug  N+1 in report generation</span></code></pre>
+<p><code>--stale</code> lists nodes whose every claim has expired: work somebody
+picked up and never came back to. It is the one query that finds the thing
+nobody will tell you about. When a claim genuinely should outlive the TTL, say
+so rather than picking a big number:</p>
+<pre><code><span class="cmd">$ weft claim 2d7e850 --no-expiry --note "long-running"</span>
+<span class="out">2d7e850 claimed by user:you</span>
+
+<span class="cmd">$ weft ls --mine</span>
+<span class="out">2d7e850  task  extract report query</span>
+
+<span class="cmd">$ weft release 2d7e850</span>
+<span class="out">2d7e850 released by user:you</span></code></pre>
+<div class="note"><strong><code>release --holder</code> drops someone else's claim</strong>
+— for when the inference above turns out to be wrong. Releasing a claim that is
+already gone is exit 0 and a plain sentence, not an error, so a cleanup script
+does not need to check first.</div>
+
+<h2><span class="n">7.</span> Retracting and correcting</h2>
+<p>The log is append-only, which is not the same as unchangeable. Every
+retraction is a new event that says what changed; nothing is rewritten, and the
+history stays readable.</p>
+<pre><code><span class="cmd">$ weft unlink 8aa903a conflicts-with 6c66798</span>
+<span class="out">unlinked 8aa903a conflicts-with 6c66798</span>
+
+<span class="cmd">$ weft ref add 2d7e850 branch:fix/report-query</span>
+<span class="out">2d7e850 bound to branch:fix/report-query</span>
+
+<span class="cmd">$ weft ref rm 2d7e850 branch:fix/report-query</span>
+<span class="out">2d7e850 no longer bound to branch:fix/report-query</span></code></pre>
+<p>State moves the same way, and it moves back. Marking the spec done frees the
+panel; undoing it puts the panel back where it was.</p>
+<pre><code><span class="cmd">$ weft done 8baa619</span>
+<span class="out">8baa619 done</span>
+
+<span class="cmd">$ weft ls --ready --ns acme/web</span>
+<span class="out">8aa903a  task  export progress panel
+6c66798  pr    rate-limit middleware</span>
+
+<span class="cmd">$ weft done 8baa619 --undo</span>
+<span class="out">8baa619 open</span>
+
+<span class="cmd">$ weft drop 6c66798</span>
+<span class="out">6c66798 dropped</span>
+
+<span class="cmd">$ weft ls --all-ns</span>
+<span class="out">0576d6a  acme/api  task  batch export v2
+8baa619  acme/api  spec  batch export spec
+6413156  acme/api  bug   N+1 in report generation
+2d7e850  acme/api  task  extract report query
+8aa903a  acme/web  task  export progress panel
+6c66798  acme/web  pr    rate-limit middleware  (dropped)</span></code></pre>
+<div class="why"><b><code>drop</code> is not delete.</b> The node stays listed and
+annotated, because "we decided not to do this" is information, and the edges
+pointing at it are information too. <code>drop --undo</code> exists for the same
+reason <code>done --undo</code> does: a wrong state recorded quickly beats a
+right state recorded never.</div>
+
+<h2><span class="n">8.</span> What weft refuses, and how it says so</h2>
+<p>Three commands here fail on purpose. Exit codes are a stable contract because
+agents branch on them.</p>
+<pre><code><span class="cmd" data-exit="5">$ weft link 8baa619 depends-on 2d7e850</span>
+<span class="err">weft: this edge would create a depends-on cycle:
+
+    2d7e850  extract report query
+  → 8baa619  batch export spec
+  → 2d7e850  extract report query</span>
+<span class="out"># exit 5</span>
+
+<span class="cmd" data-exit="2">$ weft show deadbee</span>
+<span class="err">weft: no node matches "deadbee"</span>
+<span class="out"># exit 2</span>
+
+<span class="cmd" data-exit="1">$ weft link 2d7e850 blocks 8baa619</span>
+<span class="err">weft link: unknown edge kind "blocks" (want one of: depends-on, conflicts-with, part-of, supersedes, derived-from, same-as)</span>
+<span class="out"># exit 1</span></code></pre>
+<p>The cycle rejection prints the cycle it would have made, not the word
+"invalid" — the fix is usually to reverse one of those edges, and you cannot pick
+which without seeing them. Acyclicity is enforced per edge kind:
+<code>depends-on</code> must stay a DAG, while <code>conflicts-with</code> is
+symmetric and cyclic by nature, so a global check would reject valid data.</p>
+<table>
+  <tr><th>exit</th><th>means</th><th>what a caller should do</th></tr>
+  <tr><td>0</td><td>success</td><td>—</td></tr>
+  <tr><td>1</td><td>usage: unknown command, bad flag, missing argument</td><td>fix the call</td></tr>
+  <tr><td>2</td><td>no node matches</td><td>the id is wrong or the node was never created</td></tr>
+  <tr><td>4</td><td>the prefix is ambiguous</td><td>retry with more characters</td></tr>
+  <tr><td>5</td><td>rejected: the write is well-formed but not allowed</td><td>read the message; do not retry</td></tr>
+  <tr><td>6</td><td>the store could not be read or written</td><td>stop</td></tr>
+  <tr><td>7</td><td>a shell-out failed — <code>gh</code> missing, not authenticated, refused</td><td>not weft's fault; retry or re-auth</td></tr>
+</table>
+<div class="note"><strong>Exit 7 exists so it is not exit 6.</strong> Folded together,
+"GitHub said no" would read as "your log is corrupt", which sends you to
+entirely the wrong place at the worst possible moment.</div>
+
+<h2><span class="n">9.</span> Seeding from what already exists</h2>
+<p>Everything above was typed. Real graphs start from a repository, and
+<code>import</code> shells out to <code>gh</code> to bind nodes to issues and
+pull requests.</p>
+<pre><code><span class="cmd" data-skip="shells out to gh">$ weft import gh acme/api --merged-since 30d --limit 50</span></code></pre>
+<p>Merged pull requests come in as <code>done</code>, which matters more than it
+sounds: on a graph where nothing is done, every node's nearest open blocker is
+one hop away and <code>why</code> and <code>ls --ready</code> look broken.
+Re-running an import appends nothing when nothing upstream changed — byte for
+byte, not merely "no duplicate node", so a scheduled sync does not grow the log
+forever.</p>
+<div class="why"><b>Upstream is cached, never authoritative.</b> An import records
+what GitHub said and when, as an observation with an age. The node's own
+<code>title</code> and <code>state</code> stay weft's, because
+<code>ready</code>, <code>blocked</code> and <code>why</code> all key off
+<code>state</code> — a helpful sync from upstream would silently rewrite your
+frontier. <code>show</code> renders observations with their age for the same
+reason: stale data shown as current is worse than no data.</div>
+
+<h2><span class="n">10.</span> Driving it from a script or an agent</h2>
+<p>Every command takes <code>--json</code>, and the filters compose — this is how
+an agent asks a specific question instead of listing everything and reasoning
+about it.</p>
+<pre><code><span class="cmd">$ weft ls --ready --all-ns --kind task</span>
+<span class="out">0576d6a  acme/api  task  batch export v2</span>
+
+<span class="cmd">$ weft ls --recent --since 72h --all-ns</span>
+<span class="out">6c66798  acme/web  pr    rate-limit middleware  (dropped)
+8baa619  acme/api  spec  batch export spec
+2d7e850  acme/api  task  extract report query
+8aa903a  acme/web  task  export progress panel
+6413156  acme/api  bug   N+1 in report generation
+0576d6a  acme/api  task  batch export v2</span></code></pre>
+<p>The JSON forms carry more than the text does. <code>why --json</code> returns
+the whole blocking path rather than the nearest hop, plus <code>known</code>,
+which is how a caller tells "nothing is blocking this" from "nothing recorded is
+blocking this":</p>
+<pre><code><span class="cmd">$ weft why 2d7e850 --json</span>
+<span class="out">{
+  "blockers": [
+    {
+      "id": "8baa61906bb10a3927481edc5d8800bd94d27206a7846576b4d1a18dc0573b1d",
+      "title": "batch export spec",
+      "kind": "spec",
+      "known": true,
+      "path": [
+        "2d7e85075ac29dd7e9eb3484db9fa51bcf7f4598e9af3891093a78836405baab",
+        "8baa61906bb10a3927481edc5d8800bd94d27206a7846576b4d1a18dc0573b1d"
+      ],
+      "gates": 0
+    },
+    ...</span></code></pre>
+<p>When something surprises you, ask which store you are talking to before
+anything else. It creates nothing:</p>
+<pre><code><span class="cmd">$ weft env</span>
+<span class="out">version   0.1.0
+store     /Users/you/.weft            (default)
+log       /Users/you/.weft/log.jsonl  (25 events, 6.9 KB)
+actor     user:you                    (git config user.email)
+ns        acme/api                    (WEFT_NS)</span></code></pre>
+<p>And for the artifacts that leave your machine:</p>
+<pre><code><span class="cmd">$ weft view --only-ns acme/api</span>
+<span class="cmd">$ tools/weft-range-context.py -C ~/src/acme-api origin/main HEAD &gt; ctx.md</span></code></pre>
+<div class="note"><strong><code>--only-ns</code> is what makes the page safe to
+send</strong>: the other namespaces are not in the file, and an edge that leaves
+the scope keeps only a stub of its far end. Add <code>--self-contained</code> to
+inline the renderer, so the file draws on a machine with no network.
+<code>weft-range-context.py</code> answers the other direction: given a commit
+range, what in the graph does it touch, what is still blocking it, and who is
+waiting on it — the thing a diff cannot tell you.</div>
+
+<h2><span class="n">11.</span> Where to go next</h2>
+<ul>
+  <li><code>weft help agent</code> — the orientation snippet to paste into a
+      project's <code>CLAUDE.md</code>. It ships inside the binary, so it cannot
+      drift from it.</li>
+  <li><a href="SPEC.md">SPEC.md</a> — the data model and query semantics, with an
+      appendix recording the prior art behind each decision.</li>
+  <li><a href="EVENTS.md">EVENTS.md</a> — the log format. Normative, and it wins
+      on any conflict with SPEC.</li>
+  <li><a href="getting-started.html">getting-started.html</a> — the ten-minute
+      version, if you arrived here first.</li>
+</ul>
+
+<div class="why"><b>All of it is one append-only JSONL file.</b> The merge, the
+retraction, the expired claim and the inference are events in the same log, and
+the graph is a fold over them. That is where history, audit and multi-writer
+support come from — and why the log, not the binary, is the contract.</div>
+
+<footer>
+  weft — one static binary, no daemon, no server.
+  Every example on this page is executed by <code>cmd/weft/advanced_test.go</code>.
+</footer>
+
+</div>
+</body>
+</html>

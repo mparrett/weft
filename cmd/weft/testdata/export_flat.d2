@@ -1,0 +1,28 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+direction: right
+
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "aaaaaaa\nN+1 in report generation" {
+  tooltip: "bug · acme/api"
+  link: "https://github.com/acme/api/issues/412"
+}
+"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "bbbbbbb\nthe \"batch export\" spec\\draft" {
+  tooltip: "spec · acme/api"
+  link: "https://github.com/acme/api/pull/77"
+  style.fill: "#e8f5e9"
+  style.stroke: "#66bb6a"
+}
+"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": "ccccccc\nreview point Z" {
+  tooltip: "finding · other/fork"
+  style.stroke-dash: 3
+  style.stroke: "#cccccc"
+  style.font-color: "#999999"
+}
+
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -- "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": "conflicts-with" {style.stroke: "#ef6c00"; style.stroke-dash: 3}
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -> "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "depends-on" {style.stroke: "#c62828"}
+"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" -> "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff": "depends-on" {style.stroke: "#c62828"}
+"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" -> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "part-of" {style.stroke: "#5c6bc0"; style.stroke-dash: 2}
