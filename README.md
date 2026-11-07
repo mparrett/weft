@@ -1,4 +1,4 @@
-# weft
+<h1 align="center"><img src="docs/logo.png" alt="weft" width="220"></h1>
 
 A durable graph of work — what you're blocked on, what's blocked on you, and how
 any of it connects — shared by humans and the agents working alongside them.
