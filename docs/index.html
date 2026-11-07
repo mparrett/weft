@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>weft</title>
+<meta name="description" content="A durable graph of work: tasks, issues and workstreams in one append-only log, with a CLI for humans and agents.">
+<!--
+  The landing page for the published docs. Self-contained like its siblings:
+  it reads the same from a checkout as from the site. The .md links resolve
+  beside it in a checkout; the Pages workflow points them at GitHub's
+  rendered view, since the site serves only these pages.
+-->
+<style>
+  :root{
+    --bg:#fbfbfa; --card:#fff; --ink:#1c1c1a; --muted:#5f5f5a; --faint:#8a8a83;
+    --line:#e2e2dd; --accent:#5b3fd1; --code:#f6f6f4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#151513; --card:#1d1d1b; --ink:#eceae4; --muted:#a5a49c; --faint:#77766e;
+      --line:#33332e; --accent:#a98bf5; --code:#1a1a18;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 96px;}
+  header{text-align:center;border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:34px;}
+  header img{width:200px;height:auto;}
+  h1{position:absolute;left:-9999px;}
+  .sub{color:var(--muted);margin:14px auto 0;max-width:560px;font-size:16px;}
+  h2{font-size:19px;margin:40px 0 12px;letter-spacing:-.01em;}
+  p{margin:0 0 14px;}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+       background:var(--code);padding:1px 5px;border-radius:4px;border:1px solid var(--line);}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+      padding:14px 16px;overflow-x:auto;margin:0 0 16px;}
+  pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.6;}
+  a{color:var(--accent);}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:0 0 8px;}
+  .card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;
+        padding:16px 18px;text-decoration:none;color:var(--ink);}
+  .card:hover{border-color:var(--accent);}
+  .card b{display:block;color:var(--accent);margin-bottom:4px;}
+  .card span{color:var(--muted);font-size:14px;}
+  ul{margin:0 0 14px;padding-left:20px;} li{margin-bottom:6px;}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.png">
+    <img src="logo.png" alt="">
+  </picture>
+  <h1>weft</h1>
+  <p class="sub">A durable graph of work — what you're blocked on, what's blocked on
+  you, and how any of it connects — shared by humans and the agents working
+  alongside them.</p>
+</header>
+
+<p>One append-only JSONL log, no daemon and no server. Tasks, issues and
+workstreams are nodes; claims, links and refs are events folded over the log, so
+history, audit and many concurrent writers come with the format.</p>
+
+<pre><code>git clone https://github.com/mparrett/weft
+cd weft
+make install    # to ~/.local/bin; needs Go 1.25</code></pre>
+
+<h2>Walkthroughs</h2>
+<div class="cards">
+  <a class="card" href="getting-started.html"><b>Getting started</b>
+    <span>Ten minutes, start to finish, with real transcripts. Every command is
+    re-run by the test suite.</span></a>
+  <a class="card" href="advanced-walkthrough.html"><b>Advanced walkthrough</b>
+    <span>Two repositories, duplicates and <code>merge</code>, blast radius, routes,
+    expired claims, retractions.</span></a>
+</div>
+
+<h2>Reference</h2>
+<ul>
+  <li><a href="SPEC.md">SPEC</a> — data model, storage, CLI, phase 2, and the prior
+  art behind each decision</li>
+  <li><a href="EVENTS.md">EVENTS</a> — the log format: envelope, identity,
+  provenance, corrections, fold semantics, write protocol</li>
+  <li><a href="BUILD.md">BUILD</a> — stack, platform, layout, milestones, and the
+  verification ladder</li>
+  <li><a href="AGENT.md">AGENT</a> — the onboarding snippet for a project's
+  <code>CLAUDE.md</code> / <code>AGENTS.md</code>; <code>weft help agent</code>
+  prints the same</li>
+</ul>
+
+<footer>
+  weft — one static binary, no daemon, no server.
+  Source, issues and releases: <a href="https://github.com/mparrett/weft">github.com/mparrett/weft</a>.
+</footer>
+
+</div>
+</body>
+</html>

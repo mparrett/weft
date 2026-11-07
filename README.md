@@ -101,6 +101,9 @@ never be more than half-empty.
 
 ## Docs
 
+The walkthroughs are published at
+[matt.parrett.us/weft](https://matt.parrett.us/weft/).
+
 - [`docs/SPEC.md`](docs/SPEC.md) — data model, storage, CLI, phase 2, design
   constraints, open questions, and an appendix recording the prior art behind
   each decision
