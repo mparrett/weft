@@ -430,6 +430,10 @@ const mlabel = s => String(s)
   .replace(/</g, "#lt;")
   .replace(/>/g, "#gt;")
   .replace(/"/g, "#quot;")
+  // A folded parent's label goes through @{ label: "..." }, which mermaid
+  // parses as YAML: a backslash there starts an escape, so "C:\path" blanks
+  // the graph and "\n" becomes a newline. Escaped everywhere for one rule.
+  .replace(/\\/g, "#92;")
   .replace(/[\[\]{}|]/g, " ");
 
 // gh:owner/repo#12 and pr:owner/repo#45 carry everything a URL needs. Other
