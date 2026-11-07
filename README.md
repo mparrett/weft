@@ -1,4 +1,9 @@
-<h1 align="center"><img src="docs/logo.png" alt="weft" width="220"></h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img src="docs/logo.png" alt="weft" width="220">
+  </picture>
+</h1>
 
 A durable graph of work — what you're blocked on, what's blocked on you, and how
 any of it connects — shared by humans and the agents working alongside them.
