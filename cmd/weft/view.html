@@ -931,22 +931,35 @@ const fillShare = prefix => (prefix === "t" ? .55 : .22);
 
 // The same interface nsGroups gives, so drawing and the legend treat both kinds
 // of colour mode alike. `clock` is "created" or "touched", as in nodeTime.
-function timeGroups(clock) {
+//
+// A folded parent stands for its folded children too (`group`: parent id ->
+// child ids, as applyFold reports it), so it takes the newest time among them.
+// Its own time alone would draw a fold holding today's work as months old, while
+// a `touched<1d` search counts those same children as hits.
+function timeGroups(clock, group = new Map()) {
   const now = Date.now();
-  const days = n => (now - nodeTime(n, clock)) / 864e5;
+  const time = n => {
+    let t = nodeTime(n, clock);
+    for (const id of group.get(n.id) || []) {
+      const c = nodeTime(byId.get(id) || {}, clock);
+      if (!Number.isNaN(c) && (Number.isNaN(t) || c > t)) t = c;
+    }
+    return t;
+  };
   return {
     prefix: "t",
     key: n => {
-      const d = days(n);
+      const d = (now - time(n)) / 864e5;
       return Number.isNaN(d) ? "x" : String(TIME_BUCKETS.findIndex(([lim]) => d < lim));
     },
     slot: k => (k === "x" ? "x" : +k),
     label: k => (k === "x" ? "no date" : TIME_BUCKETS[+k][1]),
-    // The node's own time, not its bucket's range: more exact, and still names
-    // the bucket when the shades are hard to tell apart.
+    // The time the bucket came from, not the bucket's range: more exact, and
+    // still names the bucket when the shades are hard to tell apart. Read from
+    // the same instant as key, so the two cannot disagree.
     boxLabel: n => {
-      const s = clock === "touched" ? n.touched || n.created : n.created;
-      return s ? age(s).replace(/ ago$/, "") : "no date";
+      const t = time(n);
+      return Number.isNaN(t) ? "no date" : age(new Date(t).toISOString()).replace(/ ago$/, "");
     },
     order: k => (k === "x" ? TIME_BUCKETS.length : +k),
   };
@@ -960,9 +973,14 @@ function nsClassDef(cls, css) {
   const slot = slotStr === "x" ? "x" : +slotStr;
   const v = name => css.getPropertyValue(name).trim();
   const hue = hueOf(prefix, slot, css), surf = v("--card2");
+  // A time bucket's hue is already faded by age, so fading done again by the
+  // namespace mix left every done box near the card colour whatever its bucket.
+  const doneStyle = prefix === "t"
+    ? `fill:${mixHex(hue, surf, .25)},stroke:${hue},color:${v("--muted")}`
+    : `fill:${mixHex(hue, surf, .08)},stroke:${mixHex(hue, surf, .5)},color:${v("--muted")}`;
   const style = {
     open:     `fill:${mixHex(hue, surf, fillShare(prefix))},stroke:${hue},stroke-width:2px,color:${v("--ink")}`,
-    done:     `fill:${mixHex(hue, surf, .08)},stroke:${mixHex(hue, surf, .5)},color:${v("--muted")}`,
+    done:     doneStyle,
     dropped:  `fill:transparent,stroke:${hue},color:${v("--faint")},stroke-dasharray:4 3`,
     context:  `fill:transparent,stroke:${mixHex(hue, surf, .5)},color:${v("--faint")}`,
     external: `fill:transparent,stroke:${hue},color:${v("--muted")},stroke-dasharray:1 4`,
@@ -1027,8 +1045,8 @@ function buildDef() {
   const lines = ["flowchart " + seg("dir")];
   const mode = seg("colour");
   const byNs = mode === "ns" ? nsGroups(nodes)
-    : mode === "age" ? timeGroups("created")
-    : mode === "touched" ? timeGroups("touched") : null;
+    : mode === "age" ? timeGroups("created", folds.group)
+    : mode === "touched" ? timeGroups("touched", folds.group) : null;
   updateColourLegend(byNs, nodes);
   const nsUsed = new Set();
   for (const n of nodes) {

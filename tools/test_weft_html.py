@@ -1222,9 +1222,10 @@ class TestTimeColour(unittest.TestCase):
         "months":  {"created": "2026-09-01T12:00:00Z", "touched": "2026-11-02T11:00:00Z"},
         "ancient": {"created": "2026-01-01T12:00:00Z"},
         "stub":    {"external": True},
+        "garbled": {"created": "not a date"},
     }
 
-    def rows(self, clock):
+    def rows(self, clock, group=None):
         page = render([node("x")])
         src = "\n".join([
             page_fn_decl(page, "age") + "\n}",
@@ -1232,8 +1233,9 @@ class TestTimeColour(unittest.TestCase):
             next(l for l in page.splitlines() if l.startswith("const TIME_BUCKETS")),
             page_fn_decl(page, "timeGroups") + "\n}",
             f"Date.now = () => Date.parse({json.dumps(self.NOW)});",
-            f"const nodes = {json.dumps([dict(v, title=k) for k, v in self.NODES.items()])};",
-            f"const g = timeGroups({json.dumps(clock)});",
+            f"const nodes = {json.dumps([dict(v, title=k, id=k) for k, v in self.NODES.items()])};",
+            "const byId = new Map(nodes.map(n => [n.id, n]));",
+            f"const g = timeGroups({json.dumps(clock)}, new Map(Object.entries({json.dumps(group or {})})));",
             "console.log(JSON.stringify(Object.fromEntries(nodes.map(n => {",
             "  const k = g.key(n); return [n.title, [g.label(k), g.slot(k), g.boxLabel(n)]]; }))));",
         ])
@@ -1257,6 +1259,15 @@ class TestTimeColour(unittest.TestCase):
     def test_a_stub_has_no_date(self):
         for clock in ("created", "touched"):
             self.assertEqual(self.rows(clock)["stub"], ["no date", "x", "no date"])
+
+    def test_an_unreadable_stamp_is_no_date_on_the_box_too(self):
+        self.assertEqual(self.rows("created")["garbled"], ["no date", "x", "no date"])
+
+    def test_a_folded_parent_takes_its_newest_member(self):
+        """A fold holding today's work must not read as months old."""
+        got = self.rows("touched", {"ancient": ["months", "stub"]})
+        self.assertEqual(got["ancient"], ["<1d", 0, "1h"])
+        self.assertEqual(self.rows("touched")["ancient"], ["90d+", 4, "305d"])
 
 
 class TestLegendHelp(unittest.TestCase):
