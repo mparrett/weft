@@ -185,7 +185,8 @@
   .src.expired{background:var(--card2);color:var(--faint);}
   .lapsed code{opacity:.55;}
 
-  .node.hit>rect,.node.hit>polygon{stroke-width:3px !important;}
+  /* A folded parent is mermaid's `procs` shape: paths inside a group, not a rect. */
+  .node.hit>rect,.node.hit>polygon,.node.hit>g.basic path{stroke-width:3px !important;}
   @media (prefers-reduced-motion: reduce){*{transition:none !important;}}
   /* Wide screens show every control at once; the toggle and the sheet dismiss
      are phone affordances and would be noise here. */
@@ -363,7 +364,7 @@
   <!-- Only meaningful on a page built with --only-ns; unhidden there. -->
   <span id="legendExternal" hidden data-help="A node in another namespace, left out of this page. Kept as a stub (id and namespace only) so a blocker in another project does not silently disappear."><i class="swatch ext"></i> outside this page</span>
   <span data-help="The arrow points at what has to happen first: A depends-on B means B blocks A."><i class="rule"></i> depends-on</span>
-  <span data-help="A belongs to B, a piece of a larger piece of work. With &quot;grouped&quot; on, children fold into their parent and its label counts them."><i class="rule partof"></i> part-of</span>
+  <span data-help="A belongs to B, a piece of a larger piece of work. With &quot;grouped&quot; on, children fold into their parent, drawn as a stack of boxes whose label counts them."><i class="rule partof"></i> part-of</span>
   <span data-help="conflicts-with, supersedes, derived-from, same-as. Each edge is labelled with its kind."><i class="rule other"></i> other edges</span>
   <!-- Only meaningful when the export carried provenance (--include source);
        unhidden then, since a legend entry for something never drawn is noise. -->
@@ -429,6 +430,10 @@ const mlabel = s => String(s)
   .replace(/</g, "#lt;")
   .replace(/>/g, "#gt;")
   .replace(/"/g, "#quot;")
+  // A folded parent's label goes through @{ label: "..." }, which mermaid
+  // parses as YAML: a backslash there starts an escape, so "C:\path" blanks
+  // the graph and "\n" becomes a newline. Escaped everywhere for one rule.
+  .replace(/\\/g, "#92;")
   .replace(/[\[\]{}|]/g, " ");
 
 // gh:owner/repo#12 and pr:owner/repo#45 carry everything a URL needs. Other
@@ -952,6 +957,14 @@ function updateColourLegend(byNs, drawn) {
   if (!document.getElementById("legendHelp").hidden) renderHelp();
 }
 
+// A folded parent stands for several nodes, so it is drawn as several: mermaid's
+// `procs` shape, a box with two offset copies behind it. The "+N folded" line
+// says how many; the stack is what makes a group findable without reading
+// every label.
+const box = (id, label, folded) => folded
+  ? `  ${mid(id)}@{ shape: procs, label: "${label}" }`
+  : `  ${mid(id)}["${label}"]`;
+
 function buildDef() {
   const { nodes, edges, matched, narrowing, folds } = select();
 
@@ -984,13 +997,13 @@ function buildDef() {
       // rests on hue alone; done takes a check mark because fill is spoken for.
       const k = byNs.key(n), cls = `g${byNs.slot(k)}${variant}`;
       const check = variant === "done" ? "\u2713 " : "";
-      lines.push(`  ${mid(n.id)}["${mlabel(trunc(byNs.label(k), 24) + " \u00b7 " + short(n.id))}` +
-                 `<br/>${mlabel(check)}${body}${tag}"]`);
+      lines.push(box(n.id, `${mlabel(trunc(byNs.label(k), 24) + " \u00b7 " + short(n.id))}` +
+                 `<br/>${mlabel(check)}${body}${tag}`, f));
       lines.push(`  class ${mid(n.id)} ${cls}`);
       nsUsed.add(cls);
       continue;
     }
-    lines.push(`  ${mid(n.id)}["${mlabel(short(n.id))}<br/>${body}${tag}"]`);
+    lines.push(box(n.id, `${mlabel(short(n.id))}<br/>${body}${tag}`, f));
     if (variant !== "open") lines.push(`  class ${mid(n.id)} ${variant}`);
   }
 
