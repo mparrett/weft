@@ -336,6 +336,8 @@
         <div class="seg" id="colour" role="group" aria-label="Colour nodes by">
           <button data-v="state" aria-pressed="true" title="fill shows open, done, dropped">state</button>
           <button data-v="ns" aria-pressed="false" title="fill shows namespace; done gets a check mark">ns</button>
+          <button data-v="age" aria-pressed="false" title="fill shows how long ago the node was created; stronger is newer">age</button>
+          <button data-v="touched" aria-pressed="false" title="fill shows how long since the node last changed; stronger is more recent">touched</button>
         </div>
       </div>
       <div class="ctl"><span class="ctl-label">theme</span>
@@ -357,7 +359,8 @@
   <!-- Namespace colour mode replaces the two entries above: fill is taken by
        the namespace, so done moves to a check mark and a paler box. -->
   <span id="legendNSMode" hidden data-help="Fill colour is the namespace group, and each box's first line names it. The groups are the next path segment below whatever every drawn node shares, so the whole store colours by owner, and narrowing to one project's nodes colours by its subspaces. Colours are ranked by size across the whole page, so a search does not repaint them; four colours, then grey for the rest. Dropped, search context and outside-this-page keep the border styles shown in their own entries, drawn in the group's colour."><i class="swatch nsmode"></i> namespace</span>
-  <span id="legendDoneNS" hidden data-help="Finished, in namespace colour mode: a paler box, with a check mark before the title."><i class="swatch nsdone"></i> &#x2713; done</span>
+  <span id="legendTimeMode" hidden data-help="Fill strength is how long ago the node was created (age) or last changed (touched): the stronger the fill, the more recent. Each box's first line gives the time, so the bucket never rests on shade alone. A node never changed after it was created counts its creation as its last change; a stub from outside a scoped page has no dates and is grey."><i class="swatch" style="background:linear-gradient(90deg,var(--active),var(--card2))"></i> recent &rarr; old</span>
+  <span id="legendDoneNS" hidden data-help="Finished, in namespace and time colour modes: a paler box, with a check mark before the title."><i class="swatch nsdone"></i> &#x2713; done</span>
   <span class="ns-groups" id="legendNS" hidden></span>
   <span data-help="Decided not to do it, as opposed to finishing it. Kept for history, it stops blocking anything, and it is hidden unless &quot;dropped&quot; is ticked."><i class="swatch dropped"></i> dropped</span>
   <span data-help="Not a search or namespace match itself, but directly linked to one, so you can see what the matches connect to."><i class="swatch ctx"></i> search context</span>
@@ -908,17 +911,76 @@ function mixHex(a, b, t) {
 const nsHue = (slot, css) =>
   css.getPropertyValue(slot === "x" ? "--faint" : `--ns${slot + 1}`).trim();
 
+// Time colour modes: one hue at falling strength, so the scale reads by
+// lightness alone and survives every colour-vision deficiency. Five buckets
+// rather than a continuous ramp, because a legend can name a bucket and a
+// reader can compare two boxes against it; a gradient asks them to judge
+// shade differences between boxes the layout put far apart.
+const TIME_BUCKETS = [[1, "<1d"], [7, "1\u20137d"], [30, "7\u201330d"], [90, "30\u201390d"], [Infinity, "90d+"]];
+const TIME_STRENGTH = [1, .72, .5, .32, .18];
+const timeHue = (slot, css) => {
+  const v = name => css.getPropertyValue(name).trim();
+  return slot === "x" ? v("--faint") : mixHex(v("--active"), v("--card2"), TIME_STRENGTH[slot]);
+};
+const hueOf = (prefix, slot, css) => (prefix === "t" ? timeHue : nsHue)(slot, css);
+// How much of the hue an open box's fill takes. A namespace hue only has to be
+// told apart from three others, so a light tint does; a time bucket has to be
+// told apart from its neighbours on the same hue, and at the namespace tint the
+// two oldest were indistinguishable on a dark background.
+const fillShare = prefix => (prefix === "t" ? .55 : .22);
+
+// The same interface nsGroups gives, so drawing and the legend treat both kinds
+// of colour mode alike. `clock` is "created" or "touched", as in nodeTime.
+//
+// A folded parent stands for its folded children too (`group`: parent id ->
+// child ids, as applyFold reports it), so it takes the newest time among them.
+// Its own time alone would draw a fold holding today's work as months old, while
+// a `touched<1d` search counts those same children as hits.
+function timeGroups(clock, group = new Map()) {
+  const now = Date.now();
+  const time = n => {
+    let t = nodeTime(n, clock);
+    for (const id of group.get(n.id) || []) {
+      const c = nodeTime(byId.get(id) || {}, clock);
+      if (!Number.isNaN(c) && (Number.isNaN(t) || c > t)) t = c;
+    }
+    return t;
+  };
+  return {
+    prefix: "t",
+    key: n => {
+      const d = (now - time(n)) / 864e5;
+      return Number.isNaN(d) ? "x" : String(TIME_BUCKETS.findIndex(([lim]) => d < lim));
+    },
+    slot: k => (k === "x" ? "x" : +k),
+    label: k => (k === "x" ? "no date" : TIME_BUCKETS[+k][1]),
+    // The time the bucket came from, not the bucket's range: more exact, and
+    // still names the bucket when the shades are hard to tell apart. Read from
+    // the same instant as key, so the two cannot disagree.
+    boxLabel: n => {
+      const t = time(n);
+      return Number.isNaN(t) ? "no date" : age(new Date(t).toISOString()).replace(/ ago$/, "");
+    },
+    order: k => (k === "x" ? TIME_BUCKETS.length : +k),
+  };
+}
+
 // One class per (group, state) pair rather than two classes per node, because
 // a mermaid node takes one class. State moves off the fill onto the border and
 // the text, which namespace mode leaves free.
 function nsClassDef(cls, css) {
-  const [, slotStr, variant] = /^g(\d|x)(\w+)$/.exec(cls);
+  const [, prefix, slotStr, variant] = /^([gt])(\d|x)(\w+)$/.exec(cls);
   const slot = slotStr === "x" ? "x" : +slotStr;
   const v = name => css.getPropertyValue(name).trim();
-  const hue = nsHue(slot, css), surf = v("--card2");
+  const hue = hueOf(prefix, slot, css), surf = v("--card2");
+  // A time bucket's hue is already faded by age, so fading done again by the
+  // namespace mix left every done box near the card colour whatever its bucket.
+  const doneStyle = prefix === "t"
+    ? `fill:${mixHex(hue, surf, .25)},stroke:${hue},color:${v("--muted")}`
+    : `fill:${mixHex(hue, surf, .08)},stroke:${mixHex(hue, surf, .5)},color:${v("--muted")}`;
   const style = {
-    open:     `fill:${mixHex(hue, surf, .22)},stroke:${hue},stroke-width:2px,color:${v("--ink")}`,
-    done:     `fill:${mixHex(hue, surf, .08)},stroke:${mixHex(hue, surf, .5)},color:${v("--muted")}`,
+    open:     `fill:${mixHex(hue, surf, fillShare(prefix))},stroke:${hue},stroke-width:2px,color:${v("--ink")}`,
+    done:     doneStyle,
     dropped:  `fill:transparent,stroke:${hue},color:${v("--faint")},stroke-dasharray:4 3`,
     context:  `fill:transparent,stroke:${mixHex(hue, surf, .5)},color:${v("--faint")}`,
     external: `fill:transparent,stroke:${hue},color:${v("--muted")},stroke-dasharray:1 4`,
@@ -927,22 +989,31 @@ function nsClassDef(cls, css) {
 }
 
 function updateColourLegend(byNs, drawn) {
-  const on = !!byNs;
+  const on = !!byNs, time = on && byNs.prefix === "t";
   for (const id of ["legendOpen", "legendDone"]) document.getElementById(id).hidden = on;
-  for (const id of ["legendNSMode", "legendDoneNS", "legendNS"]) document.getElementById(id).hidden = !on;
+  for (const id of ["legendDoneNS", "legendNS"]) document.getElementById(id).hidden = !on;
+  document.getElementById("legendNSMode").hidden = !on || time;
+  document.getElementById("legendTimeMode").hidden = !time;
   const el = document.getElementById("legendNS");
   if (on) {
     const css = getComputedStyle(document.documentElement);
     const surf = css.getPropertyValue("--card2").trim();
     const count = new Map();
     for (const n of drawn) { const k = byNs.key(n); count.set(k, (count.get(k) || 0) + 1); }
+    const sw = slot => {
+      const hue = hueOf(byNs.prefix || "g", slot, css);
+      return `<i class="swatch" style="background:${mixHex(hue, surf, fillShare(byNs.prefix || "g"))};border-color:${hue}"></i>`;
+    };
+    if (time) {
+      // Every drawn bucket in time order, "no date" last.
+      el.innerHTML = [...count.keys()].sort((a, b) => byNs.order(a) - byNs.order(b)).map(k =>
+        `<span>${sw(byNs.slot(k))} ${esc(byNs.label(k))} <span class="n">${count.get(k)}</span></span>`).join("");
+      if (!document.getElementById("legendHelp").hidden) renderHelp();
+      return;
+    }
     const named = [...count.keys()].filter(k => byNs.slot(k) !== "x")
       .sort((a, b) => byNs.slot(a) - byNs.slot(b));
     const rest = [...count.keys()].filter(k => byNs.slot(k) === "x").sort();
-    const sw = slot => {
-      const hue = nsHue(slot, css);
-      return `<i class="swatch" style="background:${mixHex(hue, surf, .22)};border-color:${hue}"></i>`;
-    };
     const items = named.map(k =>
       `<span title="${esc(k || "(no namespace)")}">${sw(byNs.slot(k))} ${esc(byNs.label(k))} ` +
       `<span class="n">${count.get(k)}</span></span>`);
@@ -972,7 +1043,10 @@ function buildDef() {
   // naturally left to right, while a wide part-of fan is far more compact
   // top-down. Which one a graph wants depends on the graph.
   const lines = ["flowchart " + seg("dir")];
-  const byNs = seg("colour") === "ns" ? nsGroups(nodes) : null;
+  const mode = seg("colour");
+  const byNs = mode === "ns" ? nsGroups(nodes)
+    : mode === "age" ? timeGroups("created", folds.group)
+    : mode === "touched" ? timeGroups("touched", folds.group) : null;
   updateColourLegend(byNs, nodes);
   const nsUsed = new Set();
   for (const n of nodes) {
@@ -995,9 +1069,11 @@ function buildDef() {
     if (byNs) {
       // The group is named on the box as well as coloured, so identity never
       // rests on hue alone; done takes a check mark because fill is spoken for.
-      const k = byNs.key(n), cls = `g${byNs.slot(k)}${variant}`;
+      const k = byNs.key(n), cls = `${byNs.prefix || "g"}${byNs.slot(k)}${variant}`;
       const check = variant === "done" ? "\u2713 " : "";
-      lines.push(box(n.id, `${mlabel(trunc(byNs.label(k), 24) + " \u00b7 " + short(n.id))}` +
+      const head = byNs.boxLabel ? short(n.id) + " \u00b7 " + byNs.boxLabel(n)
+        : trunc(byNs.label(k), 24) + " \u00b7 " + short(n.id);
+      lines.push(box(n.id, `${mlabel(head)}` +
                  `<br/>${mlabel(check)}${body}${tag}`, f));
       lines.push(`  class ${mid(n.id)} ${cls}`);
       nsUsed.add(cls);
@@ -1340,7 +1416,8 @@ function applyURLState() {
   press("dir", p.get("dir") || "LR");
   // Spelled like the control; `color` is read too, since it is the spelling
   // a hand-typed link most often uses.
-  press("colour", (p.get("colour") || p.get("color")) === "ns" ? "ns" : "state");
+  const colour = p.get("colour") || p.get("color");
+  press("colour", ["ns", "age", "touched"].includes(colour) ? colour : "state");
   if (p.get("theme") === "light" || p.get("theme") === "dark") {
     document.documentElement.setAttribute("data-theme", p.get("theme"));
     press("theme", p.get("theme"));
@@ -1393,7 +1470,7 @@ function syncURL() {
   // Sorted, so the same view always produces the same link.
   if (UNFOLDED.size) p.set("unfold", [...UNFOLDED].map(short).sort().join(","));
   if (seg("dir") !== "LR") p.set("dir", seg("dir"));
-  if (seg("colour") === "ns") p.set("colour", "ns");
+  if (seg("colour") !== "state") p.set("colour", seg("colour"));
 
   // Display mode rides along only when it was chosen. Writing it unconditionally
   // would put "theme=light" in every link and override the recipient's own OS
@@ -1768,7 +1845,9 @@ const CONTROL_HELP = [
   ["unconnected", "Also draw nodes with no edges. The counts line always says how many are hidden."],
   ["grouped", "Fold part-of children into their parent. Click a folded parent to open it."],
   ["colour", "<code>state</code> fills boxes by open, done and dropped; <code>ns</code> fills them " +
-             "by namespace group and names the group on each box."],
+             "by namespace group and names the group on each box; <code>age</code> and " +
+             "<code>touched</code> fill them by how recently each was created or last changed, " +
+             "and put the time on each box."],
   ["link", "The address bar holds the whole view (search, scope, layout, this panel), " +
            "so copying it sends exactly what you see. <code>#help</code> opens this panel."],
 ];
