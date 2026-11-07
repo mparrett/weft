@@ -1195,9 +1195,11 @@ class TestNamespaceColour(unittest.TestCase):
 class TestNamespaceColourWiring(unittest.TestCase):
     def test_the_mode_rides_in_the_link_only_when_chosen(self):
         page = render([node("x")])
-        self.assertIn('if (seg("colour") === "ns") p.set("colour", "ns");', page_fn_decl(page, "syncURL"))
-        self.assertIn('press("colour", (p.get("colour") || p.get("color")) === "ns" ? "ns" : "state");',
-                      page_fn_decl(page, "applyURLState"))
+        self.assertIn('if (seg("colour") !== "state") p.set("colour", seg("colour"));',
+                      page_fn_decl(page, "syncURL"))
+        restore = page_fn_decl(page, "applyURLState")
+        self.assertIn('const colour = p.get("colour") || p.get("color");', restore)
+        self.assertIn('["ns", "age", "touched"].includes(colour) ? colour : "state"', restore)
 
     def test_the_group_key_survives_the_phone_layout(self):
         self.assertIn(".legend > .ns-groups{display:inline-flex;}", render([node("x")]))
@@ -1205,6 +1207,56 @@ class TestNamespaceColourWiring(unittest.TestCase):
     def test_identity_is_never_colour_alone(self):
         """The group is named on every box in namespace mode."""
         self.assertIn('byNs.label(k), 24) + " \\u00b7 " + short(n.id)', page_fn_decl(render([node("x")]), "buildDef"))
+
+
+@unittest.skipUnless(NODE, "node not on PATH")
+class TestTimeColour(unittest.TestCase):
+    """Colour by age and by touched, run for real against a fixed clock: the
+    bucket edges, the per-box time, and touched falling back to created."""
+
+    NOW = "2026-11-02T12:00:00Z"
+    NODES = {
+        "hours":   {"created": "2026-11-02T10:00:00Z"},
+        "days":    {"created": "2026-10-30T12:00:00Z"},
+        "week":    {"created": "2026-10-26T12:00:00Z"},  # exactly 7d: the next bucket
+        "months":  {"created": "2026-09-01T12:00:00Z", "touched": "2026-11-02T11:00:00Z"},
+        "ancient": {"created": "2026-01-01T12:00:00Z"},
+        "stub":    {"external": True},
+    }
+
+    def rows(self, clock):
+        page = render([node("x")])
+        src = "\n".join([
+            page_fn_decl(page, "age") + "\n}",
+            "const nodeTime = " + page.split("const nodeTime = ", 1)[1].split(";\n", 1)[0] + ";",
+            next(l for l in page.splitlines() if l.startswith("const TIME_BUCKETS")),
+            page_fn_decl(page, "timeGroups") + "\n}",
+            f"Date.now = () => Date.parse({json.dumps(self.NOW)});",
+            f"const nodes = {json.dumps([dict(v, title=k) for k, v in self.NODES.items()])};",
+            f"const g = timeGroups({json.dumps(clock)});",
+            "console.log(JSON.stringify(Object.fromEntries(nodes.map(n => {",
+            "  const k = g.key(n); return [n.title, [g.label(k), g.slot(k), g.boxLabel(n)]]; }))));",
+        ])
+        r = subprocess.run([NODE, "-e", src], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_age_buckets_by_creation(self):
+        got = self.rows("created")
+        self.assertEqual(got["hours"], ["<1d", 0, "2h"])
+        self.assertEqual(got["days"], ["1\u20137d", 1, "3d"])
+        self.assertEqual(got["week"], ["7\u201330d", 2, "7d"])
+        self.assertEqual(got["months"], ["30\u201390d", 3, "62d"])
+        self.assertEqual(got["ancient"], ["90d+", 4, "305d"])
+
+    def test_touched_falls_back_to_created(self):
+        got = self.rows("touched")
+        self.assertEqual(got["months"], ["<1d", 0, "1h"])
+        self.assertEqual(got["days"], ["1\u20137d", 1, "3d"])  # never touched since
+
+    def test_a_stub_has_no_date(self):
+        for clock in ("created", "touched"):
+            self.assertEqual(self.rows(clock)["stub"], ["no date", "x", "no date"])
 
 
 class TestLegendHelp(unittest.TestCase):
