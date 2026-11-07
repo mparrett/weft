@@ -1,0 +1,44 @@
+name: pages
+
+# Publishes docs/ to GitHub Pages. The pages are self-contained and checked in
+# as-is; the only change on the way out is their links to the markdown docs,
+# which sit beside them in a checkout but are not part of the site, so they are
+# pointed at GitHub's rendered view instead.
+on:
+  push:
+    branches: [main]
+    paths: [docs/**, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: assemble site
+        run: |
+          mkdir _site
+          cp docs/*.html docs/*.png _site/
+          blob="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs"
+          sed -i -E "s#href=\"([A-Za-z0-9_-]+\.md)(\#[^\"]*)?\"#href=\"${blob}/\1\2\"#g" _site/*.html
+          if grep -nE 'href="[A-Za-z0-9_-]+\.md' _site/*.html; then
+            echo "a relative .md link survived the rewrite"; exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+      - id: deployment
+        uses: actions/deploy-pages@v4
