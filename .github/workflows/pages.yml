@@ -17,7 +17,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # A deploy cut off midway fails the run; queued runs still collapse to the
+  # newest, so letting the current one finish costs nothing.
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -29,14 +31,38 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: assemble site
+        shell: python
         run: |
-          mkdir _site
-          cp docs/*.html docs/*.png _site/
-          blob="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs"
-          sed -i -E "s#href=\"([A-Za-z0-9_-]+\.md)(\#[^\"]*)?\"#href=\"${blob}/\1\2\"#g" _site/*.html
-          if grep -nE 'href="[A-Za-z0-9_-]+\.md' _site/*.html; then
-            echo "a relative .md link survived the rewrite"; exit 1
-          fi
+          import os, re, shutil, sys
+          from pathlib import Path
+
+          root = Path.cwd().resolve()
+          blob = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/blob/{os.environ['GITHUB_SHA']}"
+          site = Path("_site")
+          site.mkdir()
+          for f in Path("docs").iterdir():
+              if f.suffix in (".html", ".png"):
+                  shutil.copy(f, site / f.name)
+
+          # Any relative link to a .md file, either quote, any path, optional
+          # anchor. Resolved through symlinks (AGENT.md is one), since GitHub's
+          # blob view of a symlink shows its target path, not the document.
+          link = re.compile(r"""(href|src)=(["'])(?![a-z][a-z0-9+.-]*:|[#/])([^"'#]+\.md)(#[^"']*)?\2""", re.I)
+          bad = []
+
+          def point(page, m):
+              target = (Path("docs") / m[3]).resolve()
+              if not target.is_file() or root not in target.parents:
+                  bad.append(f"{page.name}: {m[0]}")
+                  return m[0]
+              rel = target.relative_to(root).as_posix()
+              return f"{m[1]}={m[2]}{blob}/{rel}{m[4] or ''}{m[2]}"
+
+          for page in site.glob("*.html"):
+              text = page.read_text()
+              page.write_text(link.sub(lambda m: point(page, m), text))
+          if bad:
+              sys.exit("relative .md links with no file in the repo:\n" + "\n".join(bad))
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
