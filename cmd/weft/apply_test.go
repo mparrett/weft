@@ -669,3 +669,58 @@ func TestExportMachineSections(t *testing.T) {
 		t.Errorf("aliases = %v, want an empty object", snap.Aliases)
 	}
 }
+
+// A null where a value belongs is refused. Read as absent, live_on: null — what
+// a client marshalling a nil slice sends — would commit with the at-most-one
+// guard off.
+func TestApplyRefusesNullValues(t *testing.T) {
+	dir := scratch(t)
+	setupWorkstreams(t, "A", "B")
+	before := readLog(t, dir)
+	for name, x := range map[string]string{
+		"live_on":  `{"holder":"agent:S1","live_on":null}`,
+		"state":    `{"node":"x","state":null}`,
+		"claims":   `{"node":"x","claims":null}`,
+		"bound_to": `{"ref":"r","bound_to":null}`,
+		"node":     `{"node":null,"state":"open"}`,
+		"holder":   `{"holder":null,"live_on":[]}`,
+	} {
+		raw := `{"expect":[` + x + `],"ops":[{"op":"add","title":"t"}]}`
+		var out, errb bytes.Buffer
+		if code := runWithStdin([]string{"apply"}, strings.NewReader(raw), &out, &errb); code != exitUsage {
+			t.Errorf("%s: exit %d, want 1: %s", name, code, out.String())
+		}
+	}
+	if !bytes.Equal(before, readLog(t, dir)) {
+		t.Error("a refused request wrote to the log")
+	}
+}
+
+// "me" is the caller on every side of a batch: claim, release, and live_on.
+func TestApplyMeIsTheCaller(t *testing.T) {
+	scratch(t)
+	t.Setenv("WEFT_ACTOR", "agent:me")
+	code, reply := applyIn(t, map[string]any{"ops": []any{
+		map[string]any{"op": "add", "as": "$A", "title": "a", "kind": "workstream", "ns": "workstreams"},
+		map[string]any{"op": "add", "as": "$B", "title": "b", "kind": "workstream", "ns": "workstreams"},
+		map[string]any{"op": "claim", "node": "$A", "holder": "me"},
+	}})
+	if code != exitOK {
+		t.Fatal(reply)
+	}
+	tmp := reply["tmp"].(map[string]any)
+	a, b := tmp["$A"].(string), tmp["$B"].(string)
+	code, reply = applyIn(t, map[string]any{
+		"expect": []any{map[string]any{"holder": "me", "live_on": []string{a}}},
+		"ops": []any{
+			map[string]any{"op": "release", "node": a, "holder": "me"},
+			map[string]any{"op": "claim", "node": b, "holder": "me"},
+		},
+	})
+	if code != exitOK {
+		t.Fatalf("exit %d: %v", code, reply)
+	}
+	if on := liveOn(t, "agent:me"); len(on) != 1 || on[0] != b {
+		t.Fatalf("caller is live on %v, want only B", on)
+	}
+}

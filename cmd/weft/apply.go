@@ -208,7 +208,14 @@ func strictDecode(raw []byte, v any) (map[string]bool, error) {
 		return nil, err
 	}
 	present := make(map[string]bool, len(keys))
-	for k := range keys {
+	for k, v := range keys {
+		// A null is refused, not read as absent or empty. A client that
+		// marshals a nil slice for "holds nothing" sends live_on: null, and
+		// treating that as no expectation would commit with the guard silently
+		// off — the one outcome a precondition exists to rule out.
+		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return nil, fmt.Errorf("%q is null; send [] or a value, or leave the field out", k)
+		}
 		present[k] = true
 	}
 	return present, nil
@@ -540,7 +547,7 @@ func planApply(fold func(func(event.Event) error) error, rev string, req *applyR
 	}
 
 	base := time.Now()
-	if failed := checkExpectations(g, req, rev, base); failed != nil {
+	if failed := checkExpectations(g, req, rev, by, base); failed != nil {
 		return nil, nil, failed
 	}
 
@@ -639,10 +646,7 @@ func planApply(fold func(func(event.Event) error) error, rev string, req *applyR
 				return nil, nil, err
 			}
 			res.Node = n.ID
-			holder := op.Holder
-			if holder == "" || holder == "me" {
-				holder = by
-			}
+			holder := holderOrMe(op.Holder, by)
 			if op.UnlessHeld && g.ClaimBy(n.ID, holder, base) != nil {
 				break
 			}
@@ -673,8 +677,9 @@ func planApply(fold func(func(event.Event) error) error, rev string, req *applyR
 					return nil, nil, err
 				}
 				res.Node = n.ID
+				holder := holderOrMe(op.Holder, by)
 				for _, c := range g.LiveClaims(n.ID, base) {
-					if op.All || c.Holder == op.Holder {
+					if op.All || c.Holder == holder {
 						targets = append(targets, c)
 					}
 				}
@@ -769,7 +774,7 @@ func planApply(fold func(func(event.Event) error) error, rev string, req *applyR
 
 // checkExpectations evaluates every expectation against the pre-batch fold and
 // returns a conflict naming all that failed, or nil.
-func checkExpectations(g *graph.Graph, req *applyRequest, rev string, now time.Time) error {
+func checkExpectations(g *graph.Graph, req *applyRequest, rev, by string, now time.Time) error {
 	var failed []applyFailure
 	if req.Rev != "" && req.Rev != rev {
 		exp, _ := json.Marshal(map[string]string{"rev": req.Rev})
@@ -859,6 +864,7 @@ func checkExpectations(g *graph.Graph, req *applyRequest, rev string, now time.T
 			}
 
 		case x.LiveOn != nil:
+			holder := holderOrMe(*x.Holder, by)
 			exp, ae := want(*x.LiveOn)
 			if ae != nil {
 				ae.expect = &idx
@@ -871,7 +877,7 @@ func checkExpectations(g *graph.Graph, req *applyRequest, rev string, now time.T
 					continue
 				}
 				for _, c := range g.LiveClaims(n.ID, now) {
-					if c.Holder == *x.Holder {
+					if c.Holder == holder {
 						nodes = append(nodes, n.ID)
 						actual = append(actual, liveJSON{n.ID, c.ID, render.Stamp(c.At)})
 					}
@@ -987,4 +993,15 @@ func replayApply(g *graph.Graph, req *applyRequest, mine []event.Event) (*applyR
 		reply.Tmp = nil
 	}
 	return reply, nil
+}
+
+// holderOrMe resolves the CLI's "me" sugar to the asserting actor, everywhere a
+// holder is named, as claim and release do (EVENTS.md §4: the log only ever
+// carries a concrete actor). Missing it on one side is a batch that claims as
+// the caller and then releases or checks a holder literally named "me".
+func holderOrMe(holder, by string) string {
+	if holder == "" || holder == "me" {
+		return by
+	}
+	return holder
 }
