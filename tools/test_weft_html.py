@@ -1534,12 +1534,13 @@ class TestClaimColour(unittest.TestCase):
         line = lambda prefix: next(l for l in page.splitlines() if l.startswith(prefix))
         src = "\n".join([
             line("const trunc"),
-            line("const expiredClaim"),
             line("const CLAIM_LABELS"),
-            page_fn_decl(page, "claimGroups") + "\n}",
             f"Date.now = () => Date.parse({json.dumps(self.NOW)});",
             f"const nodes = {json.dumps(nodes)};",
+            "const DATA = { nodes };",
             "const byId = new Map(nodes.map(n => [n.id, n]));",
+            line("const PAGE_HAS_CLAIMS"),
+            page_fn_decl(page, "claimGroups") + "\n}",
             f"const g = claimGroups(new Map(Object.entries({json.dumps(group or {})})));",
             "console.log(JSON.stringify(nodes.map(n => [g.label(g.key(n)), g.boxLabel(n)])));",
         ])
@@ -1574,6 +1575,36 @@ class TestClaimColour(unittest.TestCase):
             {"id": "kid", "claims": [{"holder": "agent:k", "expires": self.LATER}]},
         ], group={"parent": ["kid"]})
         self.assertEqual(got[0], ["live", "agent:k"])
+
+    def test_a_fold_names_every_live_holder_among_its_members(self):
+        got = self.groups([
+            {"id": "parent"},
+            {"id": "k1", "claims": [{"holder": "agent:a", "expires": self.LATER}]},
+            {"id": "k2", "claims": [{"holder": "agent:b", "expires": self.LATER}]},
+        ], group={"parent": ["k1", "k2"]})
+        self.assertEqual(got[0], ["live", "agent:a +1"])
+
+    def test_finished_work_is_never_live_or_abandoned(self):
+        """`weft done` releases nothing, so a leftover claim on a finished node
+        must not read as somebody on it, nor, once it lapses, as abandoned."""
+        got = self.groups([
+            {"id": "done-live", "state": "done", "claims": [{"holder": "agent:a", "expires": self.LATER}]},
+            {"id": "done-lapsed", "state": "done", "claims": [{"holder": "agent:a", "expires": self.EARLIER}]},
+            {"id": "dropped", "state": "dropped", "claims": [{"holder": "agent:a"}]},
+        ])
+        self.assertEqual([g[0] for g in got], ["unclaimed"] * 3)
+
+    def test_no_claim_data_is_not_unclaimed(self):
+        """A stub from outside a scoped page, and every node of a page built from
+        an export without claims, have no claims to read — saying "unclaimed"
+        about them is a claim the page cannot back."""
+        got = self.groups([
+            {"id": "a", "claims": [{"holder": "agent:a", "expires": self.LATER}]},
+            {"id": "stub", "external": True},
+        ])
+        self.assertEqual(got[1], ["no claim data", "no claim data"])
+        no_claims_page = self.groups([{"id": "a"}, {"id": "b"}])
+        self.assertEqual(no_claims_page, [["no claim data", "no claim data"]] * 2)
 
     def test_the_mode_is_offered_and_has_a_legend_entry(self):
         page = render([node("x")])

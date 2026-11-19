@@ -361,7 +361,7 @@
        the namespace, so done moves to a check mark and a paler box. -->
   <span id="legendNSMode" hidden data-help="Fill colour is the namespace group, and each box's first line names it. The groups are the next path segment below whatever every drawn node shares, so the whole store colours by owner, and narrowing to one project's nodes colours by its subspaces. Colours are ranked by size across the whole page, so a search does not repaint them; four colours, then grey for the rest. Dropped, search context and outside-this-page keep the border styles shown in their own entries, drawn in the group's colour."><i class="swatch nsmode"></i> namespace</span>
   <span id="legendTimeMode" hidden data-help="Fill strength is how long ago the node was created (age) or last changed (touched): the stronger the fill, the more recent. Each box's first line gives the time, so the bucket never rests on shade alone. A node never changed after it was created counts its creation as its last change; a stub from outside a scoped page has no dates and is grey."><i class="swatch" style="background:linear-gradient(90deg,var(--active),var(--card2))"></i> recent &rarr; old</span>
-  <span id="legendClaimMode" hidden data-help="Fill shows who is on the work now. Live: someone holds a claim that has not expired, and the box's first line names them (+N when more than one does). Expired: every claim lapsed without a release, which is what abandoned work looks like. Unclaimed: no claim, or every claim was released. Liveness is worked out in your browser against the current time, so an open page goes stale the way a printed one would; reload to recheck. A folded parent shows the most active state among it and its children."><i class="swatch" style="background:linear-gradient(90deg,var(--active) 0 50%,var(--ns2) 50%)"></i> live / expired claim</span>
+  <span id="legendClaimMode" hidden data-help="Fill shows who is on the work now. Live: someone holds a claim that has not expired, and the box's first line names them (+N when more than one does). Expired: every claim lapsed without a release, which is what abandoned work looks like. Unclaimed: no claim, every claim was released, or the work is done or dropped, since a finished node's leftover claim is not anyone working on it. No claim data: the page does not carry claims for that node, as with a stub from outside a scoped page. Liveness is worked out in your browser against the current time, so an open page goes stale the way a printed one would; reload to recheck. A folded parent shows the most active state among it and its children, naming every live holder."><i class="swatch" style="background:linear-gradient(90deg,var(--active) 0 50%,var(--ns2) 50%)"></i> live / expired claim</span>
   <span id="legendDoneNS" hidden data-help="Finished, in namespace and time colour modes: a paler box, with a check mark before the title."><i class="swatch nsdone"></i> &#x2713; done</span>
   <span class="ns-groups" id="legendNS" hidden></span>
   <span data-help="Decided not to do it, as opposed to finishing it. Kept for history, it stops blocking anything, and it is hidden unless &quot;dropped&quot; is ticked."><i class="swatch dropped"></i> dropped</span>
@@ -924,11 +924,12 @@ const timeHue = (slot, css) => {
   const v = name => css.getPropertyValue(name).trim();
   return slot === "x" ? v("--faint") : mixHex(v("--active"), v("--card2"), TIME_STRENGTH[slot]);
 };
-// Claim colour mode: blue for live, amber for expired, grey for none. Two hues
-// a colour-blind reader can still tell apart, and the box names the state too.
-const CLAIM_LABELS = ["live", "expired"];
+// Claim colour mode: blue for live, amber for expired, grey for none, and the
+// faintest line colour where the page has no claim data. Two hues a
+// colour-blind reader can still tell apart, and the box names the state too.
+const CLAIM_LABELS = ["live", "expired", "unclaimed"];
 const claimHue = (slot, css) =>
-  css.getPropertyValue(slot === "x" ? "--faint" : slot === 0 ? "--active" : "--ns2").trim();
+  css.getPropertyValue(slot === "x" ? "--line" : ["--active", "--ns2", "--faint"][slot]).trim();
 const hueOf = (prefix, slot, css) =>
   (prefix === "t" ? timeHue : prefix === "c" ? claimHue : nsHue)(slot, css);
 // How much of the hue an open box's fill takes. A namespace hue only has to be
@@ -940,30 +941,43 @@ const fillShare = prefix => (prefix === "t" ? .55 : prefix === "c" ? .4 : .22);
 // Claims colour mode, in the interface timeGroups gives. Liveness is computed
 // here from `expires` rather than shipped in the export: a page built from an
 // unchanged graph must render identically, and a `live` flag frozen at export
-// time would also be wrong by the time the page is read.
+// time would also be wrong by the time the page is read. The clock is read once
+// per call, as timeGroups does, so a box's fill, its label and the legend
+// count cannot straddle a claim's expiry and disagree.
 //
-// A folded parent takes the most active state among it and its children, for
-// the reason timeGroups gives: a fold hiding someone's live claim must not draw
-// as unclaimed.
+// Only open work counts. `weft done` releases nothing, so a finished node's
+// leftover claim would otherwise read as live work or, once it lapsed, as
+// abandoned. A node the page has no claim data for — a stub from outside a
+// scoped page, or any node of a page built from an export without claims —
+// gets its own bucket rather than passing for unclaimed. A folded parent
+// takes the most active state among it and its children, with every live
+// holder among them, for the reason timeGroups gives: a fold hiding someone's
+// live claim must not draw as unclaimed.
+const PAGE_HAS_CLAIMS = DATA.nodes.some(n => "claims" in n || "released_claims" in n);
 function claimGroups(group = new Map()) {
+  const now = Date.now();
+  const isLive = c => !c.expires || Date.parse(c.expires) >= now;
   const stateOf = n => {
+    if (!PAGE_HAS_CLAIMS || n.external || !n.id) return { rank: 3, live: [] };
+    if (n.state === "done" || n.state === "dropped") return { rank: 2, live: [] };
     const claims = n.claims || [];
-    const live = claims.filter(c => !expiredClaim(c.expires));
+    const live = claims.filter(isLive);
     return { rank: live.length ? 0 : claims.length ? 1 : 2, live };
   };
   const best = n => {
-    let s = stateOf(n);
-    for (const id of group.get(n.id) || []) {
-      const c = stateOf(byId.get(id) || {});
-      if (c.rank < s.rank) s = c;
-    }
-    return s;
+    const members = [n, ...(group.get(n.id) || []).map(id => byId.get(id) || {})];
+    const states = members.map(stateOf);
+    // No data on the parent is not outweighed by data on its children, and
+    // vice versa: a known state beats unknown, and the most active known wins.
+    const known = states.filter(s => s.rank < 3);
+    if (!known.length) return { rank: 3, live: [] };
+    return { rank: Math.min(...known.map(s => s.rank)), live: known.flatMap(s => s.live) };
   };
   return {
     prefix: "c",
-    key: n => { const r = best(n).rank; return r === 2 ? "x" : String(r); },
+    key: n => { const r = best(n).rank; return r === 3 ? "x" : String(r); },
     slot: k => (k === "x" ? "x" : +k),
-    label: k => (k === "x" ? "unclaimed" : CLAIM_LABELS[+k]),
+    label: k => (k === "x" ? "no claim data" : CLAIM_LABELS[+k]),
     // The live holder is what a reader wants from the box; the state word
     // stands in when nobody is live.
     boxLabel: n => {
@@ -972,9 +986,9 @@ function claimGroups(group = new Map()) {
         const holders = [...new Set(live.map(c => c.holder))];
         return trunc(holders[0], 28) + (holders.length > 1 ? ` +${holders.length - 1}` : "");
       }
-      return rank === 1 ? "expired" : "unclaimed";
+      return rank === 3 ? "no claim data" : CLAIM_LABELS[rank];
     },
-    order: k => (k === "x" ? 2 : +k),
+    order: k => (k === "x" ? 3 : +k),
   };
 }
 
