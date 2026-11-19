@@ -169,6 +169,25 @@ class TestHTML(unittest.TestCase):
         observed = node("a", "x", refs=[{"ref": "gh:x/y#1", "upstream_created": "2025-01-01T00:00:00Z"}])
         self.assertNotIn("no ref carries", self.page([observed]))
 
+    def test_bare_refs_point_at_the_export_flag(self):
+        """Without --include refs every ref is a bare string and every date is
+        dropped; the page must name the flag, not send the reader to import."""
+        out = self.page([node("a", "x", refs=["gh:acme/api#1"])])
+        self.assertIn("--include refs", out)
+        self.assertNotIn("weft import gh", out)
+
+    def test_null_fields_do_not_crash(self):
+        n = {"id": None, "title": None, "ns": None, "kind": None, "state": None,
+             "created": "2026-08-01T10:00:00Z", "refs": []}
+        self.assertIn('<li class="n open"', self.page([n]))
+
+    def test_count_is_of_shown_rows(self):
+        """Done and dropped start hidden, so the count is the script's, not a
+        static total that disagrees with the rows on screen."""
+        out = self.page([node("a", "x"), node("b", "y", state="done")])
+        self.assertIn('<span id="shown"></span> of 2', out)
+        self.assertIn('getElementById("shown")', out)
+
     def test_html_and_mermaid_are_exclusive(self):
         r = subprocess.run([sys.executable, str(TOOL), "--html", "--mermaid"],
                            input="{}", capture_output=True, text=True)

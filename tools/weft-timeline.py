@@ -190,7 +190,9 @@ for(const li of document.querySelectorAll("li.n")){const s=li.classList;
 s.toggle("hide",(s.contains("done")&&!fin.checked)||(s.contains("dropped")&&!drop.checked)||
 (t!==""&&!li.dataset.text.includes(t)));}
 for(const sec of document.querySelectorAll("section")){const n=sec.querySelectorAll("li.n:not(.hide)").length;
-sec.classList.toggle("hide",!n);sec.querySelector(".c").textContent=n;}}
+sec.classList.toggle("hide",!n);sec.querySelector(".c").textContent=n;}
+const shown=document.querySelectorAll("li.n:not(.hide)").length;
+document.getElementById("shown").textContent=shown+(shown===1?" node shown":" nodes shown");}
 [q,fin,drop].forEach(e=>e.addEventListener("input",apply));apply();
 """
 
@@ -204,7 +206,15 @@ def render_html(cohorts, out):
     approx_any = any(approx for _, items in cohorts for _, approx, _ in items)
     approx_all = all(approx for _, items in cohorts for _, approx, _ in items)
     total = sum(len(items) for _, items in cohorts)
-    if approx_all:
+    # Bare-string refs mean the export was made without --include refs, which
+    # drops every upstream date; recording more observations would change
+    # nothing, so the note has to name the flag instead.
+    bare_refs = any(isinstance(r, str) for _, items in cohorts for _, _, n in items
+                    for r in n.get("refs") or [])
+    if approx_all and bare_refs:
+        note = ("Every node is placed by when weft recorded it (~): this export carries refs "
+                "without their upstream dates. Export with <code>--include refs</code> to use them.")
+    elif approx_all:
         note = ("Every node is placed by when weft recorded it (~): no ref carries an "
                 "upstream date yet. <code>weft import gh</code> and <code>weft ref observe</code> record them.")
     elif approx_any:
@@ -215,9 +225,11 @@ def render_html(cohorts, out):
     for key, items in reversed(cohorts):
         rows = []
         for t, approx, n in reversed(items):
-            state = n.get("state") if n.get("state") in ("done", "dropped") else "open"
-            text = " ".join([n.get("title", ""), n.get("ns", ""), n.get("kind", ""),
-                             n.get("id", "")[:7]]).lower()
+            # `or ""` throughout, as render_text does: a hand-built export can
+            # carry null fields, and a page must not crash where text renders.
+            f = lambda k: n.get(k) or ""
+            state = f("state") if f("state") in ("done", "dropped") else "open"
+            text = " ".join([f("title"), f("ns"), f("kind"), f("id")[:7]]).lower()
             # Bound outside the f-string: a backslash inside an f-string
             # expression is a syntax error before Python 3.12.
             mark = state_mark(n) or "\u25cf"
@@ -225,9 +237,9 @@ def render_html(cohorts, out):
                 f'<li class="n {state}" data-text="{esc(text)}">'
                 f'<span class="d">{t.date().isoformat()}{" ~" if approx else ""}</span>'
                 f'<span class="s" title="{state}">{mark}</span>'
-                f'<code>{esc(n.get("id", "")[:7])}</code> <span class="t">{esc(n.get("title", ""))}</span>'
-                f'<span class="ns">{esc(n.get("ns", ""))}</span>'
-                f'<span class="k">{esc(n.get("kind", ""))}</span></li>')
+                f'<code>{esc(f("id")[:7])}</code> <span class="t">{esc(f("title"))}</span>'
+                f'<span class="ns">{esc(f("ns"))}</span>'
+                f'<span class="k">{esc(f("kind"))}</span></li>')
         sections.append(f'<section><h2>{esc(key)} <span class="c">{len(items)}</span></h2>'
                         f'<ul>{"".join(rows)}</ul></section>')
     out.write(
@@ -238,7 +250,10 @@ def render_html(cohorts, out):
         '<input type="search" id="q" placeholder="filter by title, namespace, kind, id">\n'
         '<label><input type="checkbox" id="fin"> show done</label>\n'
         '<label><input type="checkbox" id="drop"> show dropped</label></header>\n'
-        f'<main><p class="note">{note} {total} nodes. \u25cf open \u00b7 \u2713 done \u00b7 \u2717 dropped.</p>\n'
+        # The count is filled in by the script, because done and dropped start
+        # hidden; a static total would disagree with the rows on screen.
+        f'<main><p class="note">{note} <span id="shown"></span> of {total}. '
+        '\u25cf open \u00b7 \u2713 done \u00b7 \u2717 dropped.</p>\n'
         + "\n".join(sections) +
         f'\n</main>\n<script>{HTML_SCRIPT}</script>\n</body></html>\n')
 
