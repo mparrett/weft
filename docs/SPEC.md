@@ -770,7 +770,9 @@ field takes an id, prefix, or ref, or a `$name` an earlier `add` defined with
 effects of the ones before it. Retried ops append nothing: a bound ref, an
 existing triple, a node already done, a claim under `unless_held` whose holder
 already holds one. `release` by holder releases every live claim that holder
-has on the node, not one.
+has on the node, not one. A holder of `me`, or none, is the caller, in ops and
+expectations alike. A field sent as JSON `null` is a usage error, not an absent
+one: read as absent, `live_on: null` would commit with the guard off.
 
 **Expectations** are per node or per holder, so unrelated writers never
 conflict:
