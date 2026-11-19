@@ -28,9 +28,9 @@ def render(nodes, args=()):
     return out.stdout
 
 
-def node(id_char, title, created="2026-08-01T10:00:00Z", refs=()):
+def node(id_char, title, created="2026-08-01T10:00:00Z", refs=(), state="open"):
     return {"id": id_char * 64, "ns": "acme/api", "kind": "issue",
-            "title": title, "state": "open", "created": created,
+            "title": title, "state": state, "created": created,
             "refs": list(refs)}
 
 
@@ -105,6 +105,74 @@ class TestMermaid(unittest.TestCase):
         body = render([n], args=["--mermaid"]).split("timeline")[1]
         for c in [";", "#"]:
             self.assertNotIn(c, body.split("```")[0])
+
+
+class TestState(unittest.TestCase):
+    """A timeline that prints finished and abandoned work like live work
+    misreports every period it shows."""
+
+    NODES = [node("a", "still open"), node("b", "finished", state="done"),
+             node("c", "abandoned", state="dropped")]
+
+    def test_text_marks_done_and_dropped(self):
+        out = render(self.NODES)
+        self.assertIn("~   aaaaaaa  still open", out)
+        self.assertIn("~ \u2713 bbbbbbb  finished", out)
+        self.assertIn("~ \u2717 ccccccc  abandoned", out)
+
+    def test_mermaid_marks_done_and_dropped(self):
+        out = render(self.NODES, args=["--mermaid"])
+        self.assertIn(": ~still open", out)
+        self.assertIn(": ~\u2713 finished", out)
+        self.assertIn(": ~\u2717 abandoned", out)
+
+
+class TestNanosecondStamps(unittest.TestCase):
+    def test_weft_nanosecond_stamps_parse(self):
+        """weft writes nine fractional digits, which fromisoformat rejects
+        before Python 3.11; the node must still be placed, not dropped."""
+        n = node("a", "nano", created="2026-08-01T10:00:00.123456789-07:00")
+        self.assertIn("2026-08-01 ~", render([n]))
+
+
+class TestHTML(unittest.TestCase):
+    def page(self, nodes):
+        return render(nodes, args=["--html"])
+
+    def test_is_a_page_with_a_row_per_node(self):
+        out = self.page([node("a", "one"), node("b", "two", state="done")])
+        self.assertTrue(out.startswith("<!doctype html>"))
+        self.assertEqual(out.count('<li class="n '), 2)
+        self.assertIn('<li class="n done"', out)
+
+    def test_two_runs_are_byte_identical(self):
+        nodes = [node("a", "one"), node("b", "two", created="2026-09-01T00:00:00Z")]
+        self.assertEqual(self.page(nodes), self.page(nodes))
+
+    def test_newest_period_first(self):
+        out = self.page([node("a", "january-work", created="2026-01-05T00:00:00Z"),
+                         node("b", "june-work", created="2026-06-01T00:00:00Z")])
+        self.assertLess(out.index("june-work"), out.index("january-work"))
+
+    def test_titles_are_escaped(self):
+        out = self.page([node("a", '<img src=x onerror="alert(1)">')])
+        self.assertNotIn("<img", out)
+        self.assertIn("&lt;img", out)
+
+    def test_loads_nothing_from_the_network(self):
+        out = self.page([node("a", "x")])
+        self.assertNotIn("http://", out)
+        self.assertNotIn("https://", out)
+
+    def test_says_when_every_node_is_approximate(self):
+        self.assertIn("no ref carries an upstream date yet", self.page([node("a", "x")]))
+        observed = node("a", "x", refs=[{"ref": "gh:x/y#1", "upstream_created": "2025-01-01T00:00:00Z"}])
+        self.assertNotIn("no ref carries", self.page([observed]))
+
+    def test_html_and_mermaid_are_exclusive(self):
+        r = subprocess.run([sys.executable, str(TOOL), "--html", "--mermaid"],
+                           input="{}", capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
 
 
 class TestDegenerate(unittest.TestCase):

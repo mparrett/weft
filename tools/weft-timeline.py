@@ -23,10 +23,24 @@ byte-identically forever, which is what makes the output diffable in git
 
 `--mermaid` emits a mermaid `timeline` block instead of text — the "hint an
 external layout engine" mode. Titles are sanitized for mermaid's syntax, and
-the block is fenced so it drops straight into markdown.
+the block is fenced so it drops straight into markdown. Past a few dozen nodes
+a mermaid timeline is one very tall column per period.
+
+`--html` emits a self-contained page instead: periods newest first, each node
+with its state, namespace and kind, and a filter box. Done and dropped work is
+listed but hidden until asked for, as `weft ls` hides dropped; it stays in the
+page because "what finished that week" is half of what a timeline is for. The
+page loads nothing, and like the other outputs it is canonical: the same
+export renders byte-identically, so it carries no generation time.
+
+Every output marks state: ✓ done, ✗ dropped, nothing for open. Without it a
+timeline reads finished and abandoned work as live.
+
+    weft export --json --include refs | tools/weft-timeline.py --html > timeline.html
 """
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -37,8 +51,12 @@ def parse_stamp(s):
     """RFC3339 to datetime, tolerating the Z suffix and fractional seconds."""
     if not s:
         return None
+    # weft writes nanoseconds (EVENTS.md §2.5). Before Python 3.11,
+    # fromisoformat takes exactly 3 or 6 fractional digits and raises on 9,
+    # which would drop every node as undatable; microseconds are plenty here.
+    s = re.sub(r"\.(\d+)", lambda m: "." + m.group(1)[:6].ljust(6, "0"), s.replace("Z", "+00:00"))
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return datetime.fromisoformat(s)
     except ValueError:
         return None
 
@@ -94,6 +112,14 @@ def rows(nodes, by):
     return cohorts
 
 
+STATE_MARK = {"done": "\u2713", "dropped": "\u2717"}
+
+
+def state_mark(n):
+    """✓ done, ✗ dropped; open (or unknown) carries no mark."""
+    return STATE_MARK.get(n.get("state"), "")
+
+
 def render_text(cohorts, out):
     legend_needed = any(approx for _, items in cohorts for _, approx, _ in items)
     if legend_needed:
@@ -102,9 +128,10 @@ def render_text(cohorts, out):
         out.write(f"{key}  ({len(items)} node{'s' if len(items) != 1 else ''})\n")
         for t, approx, n in items:
             mark = "~" if approx else " "
+            state = state_mark(n) or " "
             short = (n.get("id") or "")[:7]
             ns = n.get("ns", "")
-            out.write(f"  {t.date().isoformat()} {mark} {short}  {n.get('title', '')}  [{ns}]\n")
+            out.write(f"  {t.date().isoformat()} {mark} {state} {short}  {n.get('title', '')}  [{ns}]\n")
         out.write("\n")
 
 
@@ -119,6 +146,8 @@ def render_mermaid(cohorts, out):
         out.write(f"    {key}")
         for _, approx, n in items:
             title = mermaid_safe(n.get("title", ""))
+            if state_mark(n):
+                title = state_mark(n) + " " + title
             if approx:
                 title = "~" + title
             out.write(f" : {title}")
@@ -126,12 +155,103 @@ def render_mermaid(cohorts, out):
     out.write("```\n")
 
 
+HTML_STYLE = """
+:root{--bg:#fbfbfc;--card:#fff;--ink:#141a24;--muted:#5b6675;--faint:#8a94a3;--line:#e3e7ec;
+  --open:#1d4ed8;--done:#15803d;--drop:#b45309}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#161b22;--ink:#e6e9ee;--muted:#9aa4b2;
+  --faint:#6b7686;--line:#2b333f;--open:#7ea2ff;--done:#4ade80;--drop:#f59e0b}}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);
+  padding:12px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+h1{font-size:16px;margin:0}
+input[type=search]{flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);
+  border-radius:6px;background:var(--card);color:var(--ink)}
+label{color:var(--muted);font-size:13px}
+main{max-width:960px;margin:0 auto;padding:8px 16px 40px}
+.note{color:var(--muted);font-size:12px;margin:10px 0}
+h2{font-size:14px;margin:18px 0 6px}.c{color:var(--faint);font-weight:400}
+ul{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:8px}
+li{padding:5px 10px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+li:first-child{border-top:0}
+.d{color:var(--faint);font-variant-numeric:tabular-nums;min-width:92px}
+code{color:var(--muted);font-size:12px}
+.s{width:14px;text-align:center}.open .s{color:var(--open)}.done .s{color:var(--done)}.dropped .s{color:var(--drop)}
+.done,.dropped{color:var(--muted)}.dropped .t{text-decoration:line-through;text-decoration-color:var(--faint)}
+.ns,.k{font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.ns{margin-left:auto}.hide{display:none}
+"""
+
+# Hides done and dropped until asked, filters on the text each row carries, and
+# recounts each period so a header never claims rows the filter removed.
+HTML_SCRIPT = """
+const q=document.getElementById("q"),fin=document.getElementById("fin"),drop=document.getElementById("drop");
+function apply(){const t=q.value.trim().toLowerCase();
+for(const li of document.querySelectorAll("li.n")){const s=li.classList;
+s.toggle("hide",(s.contains("done")&&!fin.checked)||(s.contains("dropped")&&!drop.checked)||
+(t!==""&&!li.dataset.text.includes(t)));}
+for(const sec of document.querySelectorAll("section")){const n=sec.querySelectorAll("li.n:not(.hide)").length;
+sec.classList.toggle("hide",!n);sec.querySelector(".c").textContent=n;}}
+[q,fin,drop].forEach(e=>e.addEventListener("input",apply));apply();
+"""
+
+
+def render_html(cohorts, out):
+    """A page that works offline: periods newest first, rows newest first.
+
+    Reversed from the text order because a page is read from the top, and the
+    question it is opened for is "what happened lately"."""
+    esc = html.escape
+    approx_any = any(approx for _, items in cohorts for _, approx, _ in items)
+    approx_all = all(approx for _, items in cohorts for _, approx, _ in items)
+    total = sum(len(items) for _, items in cohorts)
+    if approx_all:
+        note = ("Every node is placed by when weft recorded it (~): no ref carries an "
+                "upstream date yet. <code>weft import gh</code> and <code>weft ref observe</code> record them.")
+    elif approx_any:
+        note = "~ placed by weft's own created, because no observed ref carries a clock."
+    else:
+        note = ""
+    sections = []
+    for key, items in reversed(cohorts):
+        rows = []
+        for t, approx, n in reversed(items):
+            state = n.get("state") if n.get("state") in ("done", "dropped") else "open"
+            text = " ".join([n.get("title", ""), n.get("ns", ""), n.get("kind", ""),
+                             n.get("id", "")[:7]]).lower()
+            # Bound outside the f-string: a backslash inside an f-string
+            # expression is a syntax error before Python 3.12.
+            mark = state_mark(n) or "\u25cf"
+            rows.append(
+                f'<li class="n {state}" data-text="{esc(text)}">'
+                f'<span class="d">{t.date().isoformat()}{" ~" if approx else ""}</span>'
+                f'<span class="s" title="{state}">{mark}</span>'
+                f'<code>{esc(n.get("id", "")[:7])}</code> <span class="t">{esc(n.get("title", ""))}</span>'
+                f'<span class="ns">{esc(n.get("ns", ""))}</span>'
+                f'<span class="k">{esc(n.get("kind", ""))}</span></li>')
+        sections.append(f'<section><h2>{esc(key)} <span class="c">{len(items)}</span></h2>'
+                        f'<ul>{"".join(rows)}</ul></section>')
+    out.write(
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+        f'<title>weft timeline</title>\n<style>{HTML_STYLE}</style></head><body>\n'
+        '<header><h1>weft timeline</h1>\n'
+        '<input type="search" id="q" placeholder="filter by title, namespace, kind, id">\n'
+        '<label><input type="checkbox" id="fin"> show done</label>\n'
+        '<label><input type="checkbox" id="drop"> show dropped</label></header>\n'
+        f'<main><p class="note">{note} {total} nodes. \u25cf open \u00b7 \u2713 done \u00b7 \u2717 dropped.</p>\n'
+        + "\n".join(sections) +
+        f'\n</main>\n<script>{HTML_SCRIPT}</script>\n</body></html>\n')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--by", choices=["day", "week", "month"], default="week",
                     help="cohort granularity (default: week)")
-    ap.add_argument("--mermaid", action="store_true",
-                    help="emit a mermaid timeline block instead of text")
+    fmt = ap.add_mutually_exclusive_group()
+    fmt.add_argument("--mermaid", action="store_true",
+                     help="emit a mermaid timeline block instead of text")
+    fmt.add_argument("--html", action="store_true",
+                     help="emit a self-contained HTML page instead of text")
     ap.add_argument("-i", "--input", default="-", help="export JSON (default: stdin)")
     args = ap.parse_args()
 
@@ -152,6 +272,8 @@ def main():
         return
     if args.mermaid:
         render_mermaid(cohorts, sys.stdout)
+    elif args.html:
+        render_html(cohorts, sys.stdout)
     else:
         render_text(cohorts, sys.stdout)
 
