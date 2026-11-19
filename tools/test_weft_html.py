@@ -1199,7 +1199,7 @@ class TestNamespaceColourWiring(unittest.TestCase):
                       page_fn_decl(page, "syncURL"))
         restore = page_fn_decl(page, "applyURLState")
         self.assertIn('const colour = p.get("colour") || p.get("color");', restore)
-        self.assertIn('["ns", "age", "touched"].includes(colour) ? colour : "state"', restore)
+        self.assertIn('["ns", "age", "touched", "claims"].includes(colour) ? colour : "state"', restore)
 
     def test_the_group_key_survives_the_phone_layout(self):
         self.assertIn(".legend > .ns-groups{display:inline-flex;}", render([node("x")]))
@@ -1514,6 +1514,72 @@ def page_fn(page, name):
     """The source text of a top-level `const <name> = ...` arrow function."""
     start = page.index("const " + name + " = ")
     return page[start:page.index(";\n", start)]
+
+
+@unittest.skipUnless(NODE, "node not on PATH")
+class TestClaimColour(unittest.TestCase):
+    """The claims colour mode, run for real against a fixed clock.
+
+    Liveness is computed in the page from `expires`, so a string assertion
+    cannot tell a live claim from an expired one; the page's own functions are
+    lifted out and executed in node.
+    """
+
+    NOW = "2026-11-19T12:00:00Z"
+    LATER = "2026-11-26T12:00:00Z"
+    EARLIER = "2026-11-12T12:00:00Z"
+
+    def groups(self, nodes, group=None):
+        page = render([node("x")])
+        line = lambda prefix: next(l for l in page.splitlines() if l.startswith(prefix))
+        src = "\n".join([
+            line("const trunc"),
+            line("const expiredClaim"),
+            line("const CLAIM_LABELS"),
+            page_fn_decl(page, "claimGroups") + "\n}",
+            f"Date.now = () => Date.parse({json.dumps(self.NOW)});",
+            f"const nodes = {json.dumps(nodes)};",
+            "const byId = new Map(nodes.map(n => [n.id, n]));",
+            f"const g = claimGroups(new Map(Object.entries({json.dumps(group or {})})));",
+            "console.log(JSON.stringify(nodes.map(n => [g.label(g.key(n)), g.boxLabel(n)])));",
+        ])
+        r = subprocess.run([NODE, "-e", src], capture_output=True, text=True,
+                           env={"TZ": "UTC", "PATH": "/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_live_expired_and_unclaimed(self):
+        got = self.groups([
+            {"id": "live", "claims": [{"holder": "agent:a", "expires": self.LATER}]},
+            {"id": "never", "claims": [{"holder": "agent:b"}]},  # no expiry: live forever
+            {"id": "lapsed", "claims": [{"holder": "agent:c", "expires": self.EARLIER}]},
+            {"id": "none"},
+        ])
+        self.assertEqual(got, [["live", "agent:a"], ["live", "agent:b"],
+                               ["expired", "expired"], ["unclaimed", "unclaimed"]])
+
+    def test_a_live_claim_beats_an_expired_one_and_holders_are_counted(self):
+        got = self.groups([{"id": "n", "claims": [
+            {"holder": "agent:a", "expires": self.EARLIER},
+            {"holder": "agent:b", "expires": self.LATER},
+            {"holder": "agent:c"},
+            {"holder": "agent:b"},
+        ]}])
+        self.assertEqual(got, [["live", "agent:b +1"]])
+
+    def test_a_fold_shows_its_most_active_child(self):
+        """A folded parent hiding someone's live claim must not draw unclaimed."""
+        got = self.groups([
+            {"id": "parent"},
+            {"id": "kid", "claims": [{"holder": "agent:k", "expires": self.LATER}]},
+        ], group={"parent": ["kid"]})
+        self.assertEqual(got[0], ["live", "agent:k"])
+
+    def test_the_mode_is_offered_and_has_a_legend_entry(self):
+        page = render([node("x")])
+        self.assertIn('data-v="claims"', page)
+        self.assertIn('id="legendClaimMode"', page)
+        self.assertIn('["ns", "age", "touched", "claims"]', page)
 
 
 if __name__ == "__main__":
