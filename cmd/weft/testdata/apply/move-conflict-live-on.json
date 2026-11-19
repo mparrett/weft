@@ -1,0 +1,126 @@
+{
+  "name": "move-conflict-live-on",
+  "about": "A concurrent move already landed (holder now on C), so this move's live_on fails; nothing is written.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "add",
+        "as": "$B",
+        "title": "ws b",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:b"
+        ]
+      },
+      {
+        "op": "ref.add",
+        "node": "$A",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S1",
+        "source": "observed"
+      },
+      {
+        "op": "add",
+        "as": "$C",
+        "title": "ws c",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:c"
+        ]
+      },
+      {
+        "op": "release",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "claim",
+        "node": "$C",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "holder": "agent:S1",
+        "live_on": [
+          "<A>"
+        ],
+        "ns": "workstreams",
+        "kind": "workstream"
+      },
+      {
+        "node": "<B>",
+        "state": "open"
+      }
+    ],
+    "ops": [
+      {
+        "op": "release",
+        "node": "<A>",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "ref.add",
+        "node": "<B>",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "<B>",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "exit": 8,
+  "reply": {
+    "error": "precondition failed",
+    "code": 8,
+    "committed": false,
+    "rev": "<rev>",
+    "failed": [
+      {
+        "i": 0,
+        "expect": {
+          "holder": "agent:S1",
+          "live_on": [
+            "<A>"
+          ],
+          "ns": "workstreams",
+          "kind": "workstream"
+        },
+        "actual": {
+          "live_on": [
+            {
+              "node": "<C>",
+              "claim": "<setup.6.claim>",
+              "at": "<at>"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -244,6 +244,28 @@ then name its endpoints by ref instead of by captured id.
 `weft add "..." --kind pr --ref gh:o/r#77 --source observed`. The ref is what a
 later successful import binds to, so it will attach rather than duplicate.
 
+## Several changes at once
+
+When one change is several writes — move a claim from one node to another,
+create a node with its refs and a claim — and another writer could act between
+them, send them as one batch: `weft apply --dry-run` to check it, then
+`weft apply` to commit it, with the request on stdin.
+
+```json
+{"key": "move-1",
+ "expect": [{"holder": "agent:me", "live_on": ["<A>"], "kind": "workstream"},
+            {"node": "<B>", "state": "open"}],
+ "ops": [{"op": "release", "node": "<A>", "holder": "agent:me"},
+         {"op": "claim", "node": "<B>", "holder": "agent:me"}]}
+```
+
+Every op lands or none does. If an `expect` no longer holds, nothing is written
+and the exit is 8, with each failed expectation and what is there now: reread,
+decide again, resend. If you lose the reply, resend the same `key`; a batch
+that already committed answers with its original results and writes nothing.
+`weft export --json --include claims,rev,ids,live,bindings` is the snapshot to
+decide from. The request format is in `docs/SPEC.md` §6.5.
+
 ## Address things
 
 Anywhere an id is wanted you may pass a full id, **any unique prefix**, or an
@@ -264,6 +286,7 @@ one ref are still ambiguous; `weft merge` is the cure there.
 | 5 | rejected | validation failed, e.g. the edge would create a `depends-on` cycle |
 | 6 | store error | the log is corrupt or locked; stop and tell a human |
 | 7 | external tool failed | `gh` is missing, unauthenticated, or refused; or `view` found no local mermaid or could not open the page |
+| 8 | conflict | `apply`: the state you read moved on and nothing was written; reread and retry |
 
 `--json` works on every command. Under it, errors are a JSON object on stdout
 with `error`, `code`, and sometimes `candidates`.

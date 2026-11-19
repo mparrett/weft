@@ -309,6 +309,7 @@ on `3` specifically. Stable from milestone 0.
 | 5 | Rejected — validation failed, e.g. the edge would create a cycle |
 | 6 | Store error — corrupt log, unsupported schema `v`, lock failure |
 | 7 | External tool failed — `gh` missing, not authenticated, or refused; `view --self-contained` found no local mermaid, or `--open` could not start the opener |
+| 8 | Conflict — a `weft apply` precondition no longer holds (`SPEC.md` §6.5) |
 
 A correct `--help` (or `-h`) is `0`, on stdout — it is a success, not one of the
 three usage errors `1` names. Help printed *because* a flag or argument was
@@ -318,6 +319,10 @@ told you made a mistake is the confusion this distinction removes.
 
 `2` and `4` are distinct because they call for different responses: one means
 the thing does not exist, the other means say more.
+
+`8` is distinct from `5` for the same reason: `5` says the request is wrong, so
+retrying it unchanged fails again, while `8` says the state the caller read has
+moved on, so the answer is to reread and decide again.
 
 `7` is distinct from `6` for the same reason: a shell-out that failed is not a
 weft failure, and reporting `gh auth login` as a store error sends you to
@@ -343,7 +348,7 @@ write to stdout degrade to a warning on stderr and exit `0`. The node prints at
 full id width in that case. With no readable log there is no id set to be
 distinct from, and an untruncated id always resolves.
 
-That is enforced in `add` and nowhere else yet. The other mutating commands
+That is enforced in `add` and in `apply`, which builds its reply inside the transaction and its `rev` from the bytes it wrote, and nowhere else yet. The other mutating commands
 resolve their arguments inside `Mutate`, so their fold runs *before* the append
 and a corrupt log aborts the write for real, which is why `add` was the only one
 reproducibly wrong. Their post-commit fold is still a lockless read and can

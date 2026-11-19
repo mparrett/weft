@@ -29,6 +29,10 @@ const (
 	// authenticated, or the API refusing us. Folded into 6 it would read as a
 	// corrupt log, which sends you to entirely the wrong place.
 	exitExternal = 7
+	// exitConflict is `weft apply`'s failed precondition: the state the caller
+	// read no longer holds and nothing was written. Distinct from 5 because the
+	// response differs — reread and retry, where 5 means the request is wrong.
+	exitConflict = 8
 )
 
 // version is overridden at build time via -ldflags.
@@ -42,6 +46,7 @@ type command struct {
 // env carries everything a command needs, so commands touch no globals and
 // tests can drive them without a subprocess.
 type env struct {
+	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
 }
@@ -71,6 +76,7 @@ func init() {
 		"import":  {"bind nodes to GitHub issues and PRs", cmdImport},
 		"done":    {"mark a node done", cmdState(event.StateDone)},
 		"drop":    {"mark a node dropped", cmdState(event.StateDropped)},
+		"apply":   {"commit a batch of mutations from stdin, if its preconditions hold", cmdApply},
 	}
 }
 
@@ -79,7 +85,13 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	e := &env{stdout: stdout, stderr: stderr}
+	return runWithStdin(args, os.Stdin, stdout, stderr)
+}
+
+// runWithStdin is run with the input stream named, which only `apply` reads.
+// Kept apart so the many callers that never read stdin need not pass one.
+func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	e := &env{stdin: stdin, stdout: stdout, stderr: stderr}
 
 	if len(args) == 0 {
 		usage(stderr)

@@ -97,7 +97,7 @@ Two things here are easy to break by accident:
   picking the id display width. The caller reads 6 as "nothing landed" and
   retries, and plain `add` asserts a *new* node: one silent duplicate, found later
   by whoever has to `merge` it. Failing a write in the renderer is invisible in
-  every query. Only `cmd/weft/add.go` enforces this so far; `BUILD.md` §5
+  every query. Only `cmd/weft/add.go` and `cmd/weft/apply.go` enforce this so far; `BUILD.md` §5
   records why the same window is bounded, not closed, everywhere else.
 - **Dropping an edge must release its triple key, not just the indexes**
   (`internal/graph/graph.go`, `dropEdge`). The fold collapses identical
@@ -140,6 +140,16 @@ Two things here are easy to break by accident:
   valid referent. A row carries *every* walked kind linking it to its parent,
   sorted; reporting the traversal kind alone made row content depend on the
   order `--via` was typed.
+- **A batch is committed by its `tx.commit` marker, not by its lines**
+  (`EVENTS.md` §5.5). `store.foldBytes` holds back a `tx` run until its marker
+  arrives, and `appendLocked` truncates a trailing run that has none. Any new
+  writer of several events that must land together goes through `weft apply`'s
+  framing (`event.InTx` + `event.TxCommit`); one that writes plain lines gets
+  §5.3's per-line atomicity only, and a torn write keeps its first half.
+  `TestApplyTornBatchIsNotCommitted` and the `tx_*` conformance fixtures pin it.
+- **`cmd/weft/testdata/apply/*.json` is a contract shared with another tool**,
+  which tests against copies of the same files. A change to a fixture is an
+  interface change: make it on purpose and say so in the PR.
 - **The doc pages' pasted transcripts are compared by nothing.**
   `gettingstarted_test.go` / `advanced_test.go` execute every command and
   check exit codes only, so output drift is invisible to `make check` — one

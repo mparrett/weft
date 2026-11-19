@@ -1,0 +1,120 @@
+{
+  "name": "close-normal",
+  "about": "Normal close: no live claims and the task it checked is still done. A claim taken after the blocker check would conflict, not be released.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "add",
+        "as": "$T",
+        "title": "finish the thing",
+        "kind": "task",
+        "ns": "demo"
+      },
+      {
+        "op": "link",
+        "from": "$T",
+        "kind": "part-of",
+        "to": "$A"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "release",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "done",
+        "node": "$T"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "node": "<A>",
+        "claims": []
+      },
+      {
+        "node": "<A>",
+        "state": "open"
+      },
+      {
+        "node": "<T>",
+        "state": "done"
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$note",
+        "title": "closed: shipped",
+        "kind": "note",
+        "ns": "workstreams"
+      },
+      {
+        "op": "link",
+        "from": "$note",
+        "kind": "derived-from",
+        "to": "<A>"
+      },
+      {
+        "op": "done",
+        "node": "$note"
+      },
+      {
+        "op": "done",
+        "node": "<A>"
+      }
+    ]
+  },
+  "exit": 0,
+  "reply": {
+    "committed": true,
+    "key": "<key>",
+    "rev": "<rev>",
+    "tmp": {
+      "$note": "<id>"
+    },
+    "results": [
+      {
+        "i": 0,
+        "op": "add",
+        "changed": true,
+        "node": "<tmp.$note>"
+      },
+      {
+        "i": 1,
+        "op": "link",
+        "changed": true,
+        "edge": "<id>"
+      },
+      {
+        "i": 2,
+        "op": "done",
+        "changed": true,
+        "node": "<tmp.$note>"
+      },
+      {
+        "i": 3,
+        "op": "done",
+        "changed": true,
+        "node": "<A>"
+      }
+    ]
+  }
+}

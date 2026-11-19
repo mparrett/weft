@@ -265,7 +265,7 @@ cross-namespace reverse queries read every shard — do not do it preemptively.
 
 ## 6. CLI surface
 
-Nineteen commands. Every one accepts `--json` and emits stable IDs. `--ns`
+Twenty commands. Every one accepts `--json` and emits stable IDs. `--ns`
 selects where new nodes land and which nodes a listing shows, so it appears on
 `add`, `ls`, and `import`; `--all-ns` widens `ls`. Node-rooted queries take
 neither — they are global by construction (§6.1), which is stronger than a flag
@@ -288,11 +288,12 @@ weft rdeps A [--depth N] [--via K[,K...]]   # what depends on me, and through wh
 weft ls [--ready|--blocked|--mine|--stale|--kind K] [--since D] [--recent] [--all-ns]
 weft ns                           # which namespace this directory resolves to, and why (§5)
 weft env                          # the store, actor and namespace in use, and why
-weft export [--json [--include claims,source,refs|all] | --d2 [--flat]]   # the whole graph in one fold (§6.4)
+weft export [--json [--include claims,source,refs,rev,ids,live,bindings,aliases|all] | --d2 [--flat]]   # the whole graph in one fold (§6.4)
 weft view [-o FILE|-] [--only-ns NS] [--self-contained] [--open]   # the graph as one interactive page (§6.4)
 weft merge A B                    # we learned they were always the same node (§6.2)
 weft import gh o/r [--merged-since D] | o/r#12   # bind reality; one-way, on demand (§6.3)
 weft done A | weft drop A [--if-present]   # --undo returns the node to open
+weft apply [--dry-run] < batch.json   # several mutations, one transaction, guarded by preconditions (§6.5)
 ```
 
 `add --if-absent` and `link --if-absent` are the retry-safe forms, for a writer
@@ -644,6 +645,9 @@ node   id, ns, kind, title, state
        released_claims?   only under --include claims
 edge   kind, from, to
        by?, source?, at?   only under --include source
+       id?        only under --include ids
+top    rev?       only under --include rev
+       aliases?   only under --include aliases
 ```
 
 **The default shape is frozen.** Golden files rest on its exact bytes, and
@@ -678,7 +682,26 @@ anything richer is opt-in through `--include`:
   `upstream_modified` are the artifact's own clock and are what a layout or
   timeline consumer orders by; `observed_at` says how much to trust them,
   never where to place the node.
-- **`all`** is every section.
+- **`all`** is every section above, the ones `weft view` embeds.
+
+Five more sections serve a writer that reads a snapshot and then commits against
+it with `weft apply` (§6.5). They are never part of `all`, because `rev` and
+`live` change with every write and every tick, and a page rendered from an
+unchanged graph must not differ:
+
+- **`rev`** adds a top-level `rev`: the committed byte length of the log and the
+  id prefix of its last committed event, as `"<bytes>:<12 hex>"`, or `"0:"` for an
+  empty log. Equal revs mean nothing committed in between.
+- **`ids`** adds `id` to every `claims` and `released_claims` entry (the
+  `claim.add` id, which a release targets) and to every edge (the `edge.add` id).
+- **`live`** adds `live` to every `claims` entry: unexpired as of the export.
+- **`bindings`** turns refs into objects, as `refs` does, each carrying
+  `bindings`: every live `ref.add` asserting it, oldest first, as `{id, by?,
+  source?, at?}`. A ref bound by a sync job and one a person typed are different
+  claims, and the binding's provenance is not the node's.
+- **`aliases`** adds a top-level `aliases` object mapping every merged id to its
+  survivor, so an id a caller held before a merge can be followed without a
+  `show`.
 
 `--include` applies to `--json` only. DOT and d2 are layout formats and have
 nowhere to put provenance, so asking for it there is a usage error rather than
@@ -721,6 +744,73 @@ node is unblocked when its blocker lives elsewhere (§5). The renderer is never
 part of the tool: the page loads a pinned, integrity-checked mermaid build, or
 inlines a local one under `--self-contained`, and neither mode falls back to
 the other.
+
+### 6.5 Batches: `weft apply`
+
+`weft apply` reads one JSON request on stdin and commits it in one transaction,
+or not at all. It exists for a caller whose one logical change is several
+mutations — move a claim from one node to another, create a node with its refs
+and a claim — and for whom the gap *between* single commands is the bug: two
+writers that each read "nobody holds this" both act on it.
+
+```
+{"key": "…",        optional idempotency key; generated when absent
+ "rev": "…",        optional: fail unless the log is unchanged since this rev
+ "expect": [ … ],   preconditions, checked against the in-lock fold first
+ "ops":    [ … ]}   mutations, applied in order
+```
+
+**Ops** are the existing mutations with their CLI meaning: `add` (`title`,
+`kind?`, `ns?`, `refs?`, `source?`, `as?`), `ref.add` / `ref.rm` (`node`,
+`ref`, `source?`), `claim` (`node`, `holder?`, `note?`, `ttl?`, `no_expiry?`,
+`source?`, `unless_held?`), `release` (`node` + `holder`, or `claim`, or `node` +
+`all: true`), `link` (`from`, `kind`, `to`, `source?`), `done` (`node`). A node
+field takes an id, prefix, or ref, or a `$name` an earlier `add` defined with
+`as`; the reply maps each `$name` to its id. Each op resolves against the
+effects of the ones before it. Retried ops append nothing: a bound ref, an
+existing triple, a node already done, a claim under `unless_held` whose holder
+already holds one. `release` by holder releases every live claim that holder
+has on the node, not one. A holder of `me`, or none, is the caller, in ops and
+expectations alike. A field sent as JSON `null` is a usage error, not an absent
+one: read as absent, `live_on: null` would commit with the guard off.
+
+**Expectations** are per node or per holder, so unrelated writers never
+conflict:
+
+- `{node, state}` — the node's state; an unresolvable node fails as
+  `{exists: false}`.
+- `{node, claims: [ids]}` — the node's live claim ids are exactly these.
+- `{holder, live_on: [nodes], ns?, kind?}` — the nodes where the holder has a
+  live claim, within that scope, are exactly these.
+- `{ref, bound_to: [nodes]}` — the non-dropped nodes carrying the ref are
+  exactly these.
+
+`live_on` is what makes "at most one" checkable without weft knowing why it
+matters: per-node checks alone cannot stop two writers each claiming a
+*different* new node. What a claim means — one canonical attachment, a task's
+assignee — stays the caller's (§9.3).
+
+**Replies** are JSON on stdout: `{committed, key, rev, tmp?, results}`, one
+result per op with `i`, `op`, `changed`, and the ids it touched (`node`; `claim`
+for a claim; `claims`, always present, for a release; `edge` for a link). A
+failed precondition exits 8 with `{error, code, committed: false, rev, failed:
+[{i, expect, actual}]}`, naming every expectation that failed and its current
+value, so one reread answers all of them. Other refusals use the shared error
+shape plus `i` (the op) or `expect` (the expectation). `--dry-run` runs
+everything but the append and gives the same reply and exit code with
+`committed: false`; it omits the ids of events it did not write, since they hash
+`at` and a real apply would mint different ones.
+
+**A lost reply is recovered by resending the same `key`.** If a batch with that
+key is already committed, nothing is applied and the original results come
+back with `replayed: true`; expectations are not re-checked, since they held
+when it committed. A batch of only no-ops writes nothing and so records no key.
+A key reused for a different request is a usage error, so keys should be
+unique per intent.
+
+**All or nothing holds across a crash, not just a refusal.** The batch's events
+are framed (`EVENTS.md` §5.5): readers apply none of them until the batch's
+commit marker is present, and the next writer truncates a batch torn short.
 
 ## 7. Worked example
 

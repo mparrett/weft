@@ -3,8 +3,10 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -107,6 +109,23 @@ func foldBytes(data []byte, fn func(event.Event) error) error {
 	lines = lines[:len(lines)-1]
 
 	seen := make(map[string]bool, len(lines))
+	apply := func(e event.Event) error {
+		// First occurrence wins, so a crashed-and-retried write is idempotent
+		// (EVENTS.md §5.2).
+		if seen[e.ID()] {
+			return nil
+		}
+		seen[e.ID()] = true
+		return fn(e)
+	}
+
+	// A batch's events are held back until its tx.commit arrives (EVENTS.md
+	// §5.5). A run that never gets one — torn by a crash after its first
+	// complete line, or still being written while this unlocked read ran — was
+	// never committed, and applying its prefix is exactly the half-applied
+	// batch the framing exists to rule out.
+	var pending []event.Event
+	pendingTx := ""
 	for i, line := range lines {
 		if len(line) == 0 {
 			return &ErrCorrupt{Line: i + 1, Err: errors.New("blank line")}
@@ -120,17 +139,147 @@ func foldBytes(data []byte, fn func(event.Event) error) error {
 			}
 			return &ErrCorrupt{Line: i + 1, Err: err}
 		}
-		// First occurrence wins, so a crashed-and-retried write is idempotent
-		// (EVENTS.md §5.2).
-		if seen[e.ID()] {
+		tx := e.Str(event.FieldTx)
+		if e.Kind() == event.KindTxCommit {
+			n, _ := e.Int("n")
+			if tx != "" && tx == pendingTx && n == len(pending) {
+				for _, p := range pending {
+					if err := apply(p); err != nil {
+						return err
+					}
+				}
+				if err := apply(e); err != nil {
+					return err
+				}
+			}
+			// A commit whose run is not all here commits nothing: the run was
+			// torn, and the marker alone asserts no work.
+			pending, pendingTx = nil, ""
 			continue
 		}
-		seen[e.ID()] = true
-		if err := fn(e); err != nil {
+		if tx != "" {
+			if tx != pendingTx {
+				pending, pendingTx = nil, tx
+			}
+			pending = append(pending, e)
+			continue
+		}
+		// An untagged line ends any open run uncommitted. Only an older writer
+		// can produce this shape: it truncates the fragment but not the torn
+		// run before appending (EVENTS.md §6).
+		pending, pendingTx = nil, ""
+		if err := apply(e); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Rev names the committed state of a log: the offset just past the last
+// committed event, and that event's id prefix. The log is append-only, so equal
+// revs mean nothing was committed in between. "0:" is the empty log.
+func formatRev(end int64, lastID string) string {
+	if len(lastID) > 12 {
+		lastID = lastID[:12]
+	}
+	return fmt.Sprintf("%d:%s", end, lastID)
+}
+
+// lineHeader is the part of an event the tail scan needs. Decoding only this is
+// what keeps the scan cheap enough to run on every append.
+type lineHeader struct {
+	ID string `json:"id"`
+	Ev string `json:"ev"`
+	Tx string `json:"tx"`
+}
+
+// committedTail finds where the committed log ends: past the last complete line,
+// minus any trailing tx run that has no commit marker. It reads backwards in
+// growing chunks, so the cost follows the size of the trailing batch, not the
+// log. size must sit on a line boundary (just past an LF, or 0).
+func committedTail(readAt func([]byte, int64) (int, error), size int64) (end int64, lastID string, err error) {
+	for chunk := int64(64 << 10); ; chunk *= 2 {
+		start := max(size-chunk, 0)
+		buf := make([]byte, size-start)
+		if _, err := readAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
+			return 0, "", fmt.Errorf("reading log tail: %w", err)
+		}
+		base := start
+		if start > 0 {
+			// The chunk may begin mid-line; that line belongs to the next pass.
+			cut := bytes.IndexByte(buf, '\n') + 1
+			buf, base = buf[cut:], start+int64(cut)
+		}
+		// Offsets of each complete line in buf.
+		var offs []int
+		for i := 0; i < len(buf); {
+			offs = append(offs, i)
+			j := bytes.IndexByte(buf[i:], '\n')
+			if j < 0 {
+				break
+			}
+			i += j + 1
+		}
+		header := func(k int) lineHeader {
+			lo, hi := offs[k], len(buf)
+			if k+1 < len(offs) {
+				hi = offs[k+1]
+			}
+			var h lineHeader
+			// An unparseable line is left to the fold to report; here it simply
+			// is not part of a tx run.
+			_ = json.Unmarshal(bytes.TrimSuffix(buf[lo:hi], []byte("\n")), &h)
+			return h
+		}
+		if len(offs) == 0 {
+			if start == 0 {
+				return 0, "", nil
+			}
+			continue
+		}
+		k := len(offs) - 1
+		last := header(k)
+		if last.Tx == "" || last.Ev == event.KindTxCommit {
+			return size, last.ID, nil
+		}
+		// A trailing run with no commit: walk back to where it starts.
+		for k >= 0 {
+			h := header(k)
+			if h.Tx != last.Tx || h.Ev == event.KindTxCommit {
+				return base + int64(offs[k+1]), h.ID, nil
+			}
+			k--
+		}
+		if start == 0 {
+			return 0, "", nil
+		}
+		// The run, or the line before it, starts before this chunk.
+	}
+}
+
+func bytesReadAt(data []byte) func([]byte, int64) (int, error) {
+	return bytes.NewReader(data).ReadAt
+}
+
+// lastLF is the line boundary at or before the end of data: a trailing
+// fragment is not part of the committed log.
+func lastLF(data []byte) int64 { return int64(bytes.LastIndexByte(data, '\n') + 1) }
+
+// FoldRev folds the log like Fold and also returns its rev, both computed from
+// one read, so the rev names exactly the state that was folded.
+func (s *Store) FoldRev(fn func(event.Event) error) (string, error) {
+	data, err := os.ReadFile(s.path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("reading log: %w", err)
+	}
+	if err := foldBytes(data, fn); err != nil {
+		return "", err
+	}
+	end, id, err := committedTail(bytesReadAt(data), lastLF(data))
+	if err != nil {
+		return "", err
+	}
+	return formatRev(end, id), nil
 }
 
 // Append writes events under an exclusive lock.
@@ -139,7 +288,8 @@ func foldBytes(data []byte, fn func(event.Event) error) error {
 // lock only across the append is not enough to keep an invariant (EVENTS.md §6).
 func (s *Store) Append(events ...event.Event) error {
 	return s.withLock(func(f *os.File) error {
-		return appendLocked(f, events)
+		_, err := appendLocked(f, events)
+		return err
 	})
 }
 
@@ -149,22 +299,46 @@ func (s *Store) Append(events ...event.Event) error {
 // to commit, or an error to abort. This is what stops two processes from each
 // validating opposite edges and both committing the cycle they just rejected.
 func (s *Store) Mutate(fn func(fold func(func(event.Event) error) error) ([]event.Event, error)) error {
-	return s.withLock(func(f *os.File) error {
+	_, err := s.MutateRev(func(fold func(func(event.Event) error) error, _ string) ([]event.Event, error) {
+		return fn(fold)
+	})
+	return err
+}
+
+// MutateRev is Mutate that also hands fn the rev of the state it validates
+// against, and returns the rev after the commit (unchanged when fn returned no
+// events). The after-rev is computed from the bytes written rather than from a
+// fresh read, so reporting it cannot fail a write that landed (BUILD.md §5).
+func (s *Store) MutateRev(fn func(fold func(func(event.Event) error) error, rev string) ([]event.Event, error)) (string, error) {
+	var after string
+	err := s.withLock(func(f *os.File) error {
 		data, err := os.ReadFile(s.path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("reading log: %w", err)
 		}
+		end, id, err := committedTail(bytesReadAt(data), lastLF(data))
+		if err != nil {
+			return err
+		}
+		before := formatRev(end, id)
 		events, err := fn(func(apply func(event.Event) error) error {
 			return foldBytes(data, apply)
-		})
+		}, before)
 		if err != nil {
 			return err
 		}
 		if len(events) == 0 {
+			after = before
 			return nil
 		}
-		return appendLocked(f, events)
+		newEnd, err := appendLocked(f, events)
+		if err != nil {
+			return err
+		}
+		after = formatRev(newEnd, events[len(events)-1].ID())
+		return nil
 	})
+	return after, err
 }
 
 // withLock opens the log and holds an exclusive lock for the whole of fn.
@@ -186,32 +360,65 @@ func (s *Store) withLock(fn func(*os.File) error) error {
 	return fn(f)
 }
 
-func appendLocked(f *os.File, events []event.Event) error {
+// appendLocked writes events after discarding anything uncommitted at the tail,
+// and returns the new end of the log.
+func appendLocked(f *os.File, events []event.Event) (int64, error) {
 	if err := truncatePartial(f); err != nil {
-		return err
+		return 0, err
+	}
+	end, err := truncateTornBatch(f)
+	if err != nil {
+		return 0, err
 	}
 	var buf bytes.Buffer
 	for _, e := range events {
 		line, err := e.Marshal()
 		if err != nil {
-			return fmt.Errorf("marshalling event: %w", err)
+			return 0, fmt.Errorf("marshalling event: %w", err)
 		}
 		if bytes.ContainsRune(line, '\n') {
-			return errors.New("marshalled event contains a newline")
+			return 0, errors.New("marshalled event contains a newline")
 		}
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
 	if _, err := f.Seek(0, 2); err != nil {
-		return fmt.Errorf("seeking to end: %w", err)
+		return 0, fmt.Errorf("seeking to end: %w", err)
 	}
 	// One write of all complete lines. Concurrent appends cannot interleave
 	// mid-line because every writer holds the exclusive lock.
 	if _, err := f.Write(buf.Bytes()); err != nil {
-		return fmt.Errorf("appending: %w", err)
+		return 0, fmt.Errorf("appending: %w", err)
 	}
 	// Before releasing the lock: this is the durable artifact.
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		return 0, err
+	}
+	return end + int64(buf.Len()), nil
+}
+
+// truncateTornBatch removes a trailing tx run that has no commit marker — a
+// batch whose write was cut short after at least one complete line. Readers
+// already ignore it (EVENTS.md §5.5); removing it is what keeps the next append
+// from leaving it mid-log, where an older reader would apply it. Safe only
+// under the exclusive lock, and only after truncatePartial, so the file ends on
+// a line boundary.
+func truncateTornBatch(f *os.File) (int64, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat: %w", err)
+	}
+	size := info.Size()
+	end, _, err := committedTail(f.ReadAt, size)
+	if err != nil {
+		return 0, err
+	}
+	if end < size {
+		if err := f.Truncate(end); err != nil {
+			return 0, fmt.Errorf("truncating torn batch: %w", err)
+		}
+	}
+	return end, nil
 }
 
 // truncatePartial removes a trailing fragment left by a crashed writer. Safe

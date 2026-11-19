@@ -195,6 +195,15 @@ type Graph struct {
 type refEntry struct {
 	node string
 	ref  string
+
+	// The ref.add's provenance and file position, kept so a reader can ask who
+	// bound a ref and how (`export --include bindings`) without re-reading the
+	// log. Roughly half a real graph is inference, and a ref is a claim like
+	// any other (SPEC.md §4.4).
+	by     string
+	source string
+	at     time.Time
+	seq    int
 }
 
 // New returns an empty graph.
@@ -315,7 +324,8 @@ func (g *Graph) Apply(e event.Event) error {
 
 	case event.KindRefAdd:
 		node, ref := g.Canonical(e.Str("node")), e.Str("ref")
-		g.refs[e.ID()] = refEntry{node: node, ref: ref}
+		g.refs[e.ID()] = refEntry{node: node, ref: ref,
+			by: e.Str("by"), source: e.Str("source"), at: at, seq: g.seq}
 		if n, ok := g.Nodes[node]; ok && !slices.Contains(n.Refs, ref) {
 			n.Refs = append(n.Refs, ref)
 			g.touch(node, at)
@@ -661,6 +671,45 @@ func (g *Graph) InEdges(id, kind string) []*Edge {
 				out = append(out, e)
 			}
 		}
+	}
+	return out
+}
+
+// Binding is one live ref.add asserting a ref on a node.
+type Binding struct {
+	ID     string // the ref.add event id, which ref.retract targets
+	By     string
+	Source string
+	At     time.Time
+}
+
+// Bindings returns the live ref.add assertions of ref on node, in file order.
+// More than one is normal: two writers binding the same ref leave two
+// assertions (see FindRefs).
+func (g *Graph) Bindings(node, ref string) []Binding {
+	type seqd struct {
+		b   Binding
+		seq int
+	}
+	var all []seqd
+	for _, id := range g.FindRefs(node, ref) {
+		r := g.refs[id]
+		all = append(all, seqd{Binding{ID: id, By: r.by, Source: r.source, At: r.at}, r.seq})
+	}
+	slices.SortFunc(all, func(a, b seqd) int { return a.seq - b.seq })
+	out := make([]Binding, len(all))
+	for i, x := range all {
+		out[i] = x.b
+	}
+	return out
+}
+
+// Aliases maps every merged node id to the node it survives as, after
+// following merge chains.
+func (g *Graph) Aliases() map[string]string {
+	out := make(map[string]string, len(g.alias))
+	for id := range g.alias {
+		out[id] = g.Canonical(id)
 	}
 	return out
 }

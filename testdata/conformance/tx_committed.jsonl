@@ -1,0 +1,4 @@
+{"at":"2026-11-19T12:00:00.001Z","body":null,"by":"agent:fixture","ev":"node.add","id":"678fc77ed67e87aac1865a6fda0914dcf9654c98b8d6fc657b916b5df8b213fc","kind":"task","ns":"demo","source":"asserted","title":"untagged before","v":1}
+{"at":"2026-11-19T12:00:00.002Z","body":null,"by":"agent:fixture","ev":"node.add","id":"4c21a30b8540cd70414621784385d291ae407833193a0afed057e09ef5816923","kind":"task","ns":"demo","source":"asserted","title":"in the batch","tx":"k1","tx_op":0,"v":1}
+{"at":"2026-11-19T12:00:00.003Z","by":"agent:fixture","ev":"node.state","id":"7192fb1fa97f4f8b0732e4947330d5b8d8c1b4843cfb76887ff3f2b917b3cde5","node":"4c21a30b8540cd70414621784385d291ae407833193a0afed057e09ef5816923","source":"asserted","state":"done","tx":"k1","tx_op":1,"v":1}
+{"at":"2026-11-19T12:00:00.004Z","by":"agent:fixture","ev":"tx.commit","id":"891729408b3e714b06a96ba4895e0e24e6c2f3ef4872c977fc77408b8541c253","n":2,"source":"asserted","tx":"k1","v":1}

@@ -1,0 +1,77 @@
+{
+  "name": "create",
+  "about": "Create a workstream with its name ref, a member ref and a claim, in one batch, guarded by an unbound name and an unattached holder.",
+  "setup": {
+    "ops": []
+  },
+  "args": [],
+  "request": {
+    "key": "create-demo-1",
+    "expect": [
+      {
+        "ref": "ws:demo",
+        "bound_to": []
+      },
+      {
+        "holder": "agent:S1",
+        "live_on": [],
+        "ns": "workstreams",
+        "kind": "workstream"
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$ws",
+        "title": "demo",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:demo"
+        ]
+      },
+      {
+        "op": "ref.add",
+        "node": "$ws",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "$ws",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "exit": 0,
+  "reply": {
+    "committed": true,
+    "key": "create-demo-1",
+    "rev": "<rev>",
+    "tmp": {
+      "$ws": "<id>"
+    },
+    "results": [
+      {
+        "i": 0,
+        "op": "add",
+        "changed": true,
+        "node": "<tmp.$ws>"
+      },
+      {
+        "i": 1,
+        "op": "ref.add",
+        "changed": true,
+        "node": "<tmp.$ws>"
+      },
+      {
+        "i": 2,
+        "op": "claim",
+        "changed": true,
+        "node": "<tmp.$ws>",
+        "claim": "<id>"
+      }
+    ]
+  }
+}

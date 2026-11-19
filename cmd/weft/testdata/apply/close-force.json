@@ -1,0 +1,72 @@
+{
+  "name": "close-force",
+  "about": "Forced close: release every live claim on A under the lock, whoever holds it, then mark it done.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S2"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "node": "<A>",
+        "state": "open"
+      }
+    ],
+    "ops": [
+      {
+        "op": "release",
+        "node": "<A>",
+        "all": true
+      },
+      {
+        "op": "done",
+        "node": "<A>"
+      }
+    ]
+  },
+  "exit": 0,
+  "reply": {
+    "committed": true,
+    "key": "<key>",
+    "rev": "<rev>",
+    "results": [
+      {
+        "i": 0,
+        "op": "release",
+        "changed": true,
+        "node": "<A>",
+        "claims": [
+          "<setup.1.claim>",
+          "<setup.2.claim>"
+        ]
+      },
+      {
+        "i": 1,
+        "op": "done",
+        "changed": true,
+        "node": "<A>"
+      }
+    ]
+  }
+}
