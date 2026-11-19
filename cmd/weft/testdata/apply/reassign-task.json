@@ -1,0 +1,70 @@
+{
+  "name": "reassign-task",
+  "about": "Generic use: hand a task from holder P to holder Q, conditioned on P's claim being the only live one.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$T",
+        "title": "fix the parser",
+        "kind": "task",
+        "ns": "demo"
+      },
+      {
+        "op": "claim",
+        "node": "$T",
+        "holder": "person:P"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "node": "<T>",
+        "claims": [
+          "<setup.1.claim>"
+        ]
+      },
+      {
+        "node": "<T>",
+        "state": "open"
+      }
+    ],
+    "ops": [
+      {
+        "op": "release",
+        "claim": "<setup.1.claim>"
+      },
+      {
+        "op": "claim",
+        "node": "<T>",
+        "holder": "person:Q"
+      }
+    ]
+  },
+  "exit": 0,
+  "reply": {
+    "committed": true,
+    "key": "<key>",
+    "rev": "<rev>",
+    "results": [
+      {
+        "i": 0,
+        "op": "release",
+        "changed": true,
+        "node": "<T>",
+        "claims": [
+          "<setup.1.claim>"
+        ]
+      },
+      {
+        "i": 1,
+        "op": "claim",
+        "changed": true,
+        "node": "<T>",
+        "claim": "<id>"
+      }
+    ]
+  }
+}

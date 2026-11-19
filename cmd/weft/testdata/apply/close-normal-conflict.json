@@ -1,0 +1,115 @@
+{
+  "name": "close-normal-conflict",
+  "about": "Normal close after an attach landed: the claims expectation fails and the close writes nothing.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "add",
+        "as": "$T",
+        "title": "finish the thing",
+        "kind": "task",
+        "ns": "demo"
+      },
+      {
+        "op": "link",
+        "from": "$T",
+        "kind": "part-of",
+        "to": "$A"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "release",
+        "node": "$A",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "done",
+        "node": "$T"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S2"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "node": "<A>",
+        "claims": []
+      },
+      {
+        "node": "<A>",
+        "state": "open"
+      },
+      {
+        "node": "<T>",
+        "state": "done"
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$note",
+        "title": "closed: shipped",
+        "kind": "note",
+        "ns": "workstreams"
+      },
+      {
+        "op": "link",
+        "from": "$note",
+        "kind": "derived-from",
+        "to": "<A>"
+      },
+      {
+        "op": "done",
+        "node": "$note"
+      },
+      {
+        "op": "done",
+        "node": "<A>"
+      }
+    ]
+  },
+  "exit": 8,
+  "reply": {
+    "error": "precondition failed",
+    "code": 8,
+    "committed": false,
+    "rev": "<rev>",
+    "failed": [
+      {
+        "i": 0,
+        "expect": {
+          "node": "<A>",
+          "claims": []
+        },
+        "actual": {
+          "claims": [
+            {
+              "id": "<setup.6.claim>",
+              "holder": "agent:S2",
+              "at": "<at>"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

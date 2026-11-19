@@ -41,7 +41,7 @@ func TestSnippetCoversEveryExitCode(t *testing.T) {
 	codes := map[string]int{
 		"success": exitOK, "usage": exitUsage, "not found": exitNotFound,
 		"ambiguous": exitAmbiguous, "rejected": exitRejected,
-		"store": exitStore, "external": exitExternal,
+		"store": exitStore, "external": exitExternal, "conflict": exitConflict,
 	}
 	table := agentDoc[strings.Index(agentDoc, "| Code |"):]
 	for label, code := range codes {
@@ -92,7 +92,7 @@ func TestSnippetFlagsAllExist(t *testing.T) {
 		"--even-dropped": "add", "--if-present": "done,drop",
 		"--ttl": "claim", "--undo": "done", "--limit": "import", "--help": "",
 		"--via": "path", "--dir": "path", "--merged-since": "import",
-		"--include": "export", "--d2": "export",
+		"--include": "export", "--d2": "export", "--dry-run": "apply",
 		"--mermaid-js": "view", "--self-contained": "view", "--only-ns": "view", "--open": "view",
 	}
 	for _, m := range flagRE.FindAllStringSubmatch(agentDoc, -1) {

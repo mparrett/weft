@@ -1,0 +1,79 @@
+{
+  "name": "create-replay",
+  "about": "The caller lost the reply and resends the same keyed request: weft answers from the log with the original results and writes nothing.",
+  "setup": {
+    "ops": []
+  },
+  "args": [],
+  "request": {
+    "key": "create-demo-1",
+    "expect": [
+      {
+        "ref": "ws:demo",
+        "bound_to": []
+      },
+      {
+        "holder": "agent:S1",
+        "live_on": [],
+        "ns": "workstreams",
+        "kind": "workstream"
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$ws",
+        "title": "demo",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:demo"
+        ]
+      },
+      {
+        "op": "ref.add",
+        "node": "$ws",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "$ws",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "repeat": true,
+  "exit": 0,
+  "reply": {
+    "committed": true,
+    "key": "create-demo-1",
+    "rev": "<rev>",
+    "tmp": {
+      "$ws": "<id>"
+    },
+    "results": [
+      {
+        "i": 0,
+        "op": "add",
+        "changed": true,
+        "node": "<tmp.$ws>"
+      },
+      {
+        "i": 1,
+        "op": "ref.add",
+        "changed": true,
+        "node": "<tmp.$ws>"
+      },
+      {
+        "i": 2,
+        "op": "claim",
+        "changed": true,
+        "node": "<tmp.$ws>",
+        "claim": "<id>"
+      }
+    ],
+    "replayed": true
+  }
+}

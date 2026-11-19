@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -353,5 +354,65 @@ func TestDirPrecedence(t *testing.T) {
 	t.Setenv("WEFT_HOME", "")
 	if d, _ := Dir(); d != filepath.Join("/xdg", "weft") {
 		t.Errorf("XDG_DATA_HOME should apply, got %s", d)
+	}
+}
+
+// A torn batch bigger than the first tail chunk: the scan has to grow its window
+// to find where the run starts, and the rev must name the state before it.
+func TestTornBatchLargerThanTailChunk(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("WEFT_HOME", dir)
+	s, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	first, err := event.NodeAdd("demo", "task", "committed", "agent:test", event.SourceAsserted, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append(first); err != nil {
+		t.Fatal(err)
+	}
+	committed, _ := os.ReadFile(s.Path())
+	revBefore, err := s.FoldRev(func(event.Event) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ~200 KiB of batch events with no commit marker.
+	var torn []byte
+	for i := 0; len(torn) < 200<<10; i++ {
+		e, err := event.NodeAdd("demo", "task", strings.Repeat("x", 500), "agent:test", event.SourceAsserted, base.Add(time.Duration(i+1)*time.Microsecond))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := event.InTx(e, "big", 0); err != nil {
+			t.Fatal(err)
+		}
+		line, _ := e.Marshal()
+		torn = append(append(torn, line...), '\n')
+	}
+	if err := os.WriteFile(s.Path(), append(append([]byte{}, committed...), torn...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	n := 0
+	rev, err := s.FoldRev(func(event.Event) error { n++; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || rev != revBefore {
+		t.Fatalf("folded %d events at rev %q, want 1 at %q", n, rev, revBefore)
+	}
+
+	next, _ := event.NodeAdd("demo", "task", "next", "agent:test", event.SourceAsserted, base.Add(time.Second))
+	if err := s.Append(next); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(s.Path())
+	line, _ := next.Marshal()
+	if want := append(append(committed, line...), '\n'); !bytes.Equal(after, want) {
+		t.Fatalf("after append: %d bytes, want %d (torn run not truncated)", len(after), len(want))
 	}
 }

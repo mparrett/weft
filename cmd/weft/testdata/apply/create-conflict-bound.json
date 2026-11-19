@@ -1,0 +1,79 @@
+{
+  "name": "create-conflict-bound",
+  "about": "The name is already bound (a concurrent create landed first).",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$X",
+        "title": "ws demo",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:demo"
+        ]
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "key": "create-demo-2",
+    "expect": [
+      {
+        "ref": "ws:demo",
+        "bound_to": []
+      },
+      {
+        "holder": "agent:S1",
+        "live_on": [],
+        "ns": "workstreams",
+        "kind": "workstream"
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$ws",
+        "title": "demo",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:demo"
+        ]
+      },
+      {
+        "op": "ref.add",
+        "node": "$ws",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "$ws",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "exit": 8,
+  "reply": {
+    "error": "precondition failed",
+    "code": 8,
+    "committed": false,
+    "rev": "<rev>",
+    "failed": [
+      {
+        "i": 0,
+        "expect": {
+          "ref": "ws:demo",
+          "bound_to": []
+        },
+        "actual": {
+          "bound_to": [
+            "<X>"
+          ]
+        }
+      }
+    ]
+  }
+}

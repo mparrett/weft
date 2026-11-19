@@ -1,0 +1,107 @@
+{
+  "name": "move-dry-run",
+  "about": "Same as move-success under --dry-run: same reply shape, committed false, no ids for events never written.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "add",
+        "as": "$B",
+        "title": "ws b",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:b"
+        ]
+      },
+      {
+        "op": "ref.add",
+        "node": "$A",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "$A",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "args": [
+    "--dry-run"
+  ],
+  "request": {
+    "expect": [
+      {
+        "holder": "agent:S1",
+        "live_on": [
+          "<A>"
+        ],
+        "ns": "workstreams",
+        "kind": "workstream"
+      },
+      {
+        "node": "<B>",
+        "state": "open"
+      }
+    ],
+    "ops": [
+      {
+        "op": "release",
+        "node": "<A>",
+        "holder": "agent:S1"
+      },
+      {
+        "op": "ref.add",
+        "node": "<B>",
+        "ref": "session:S1",
+        "source": "observed"
+      },
+      {
+        "op": "claim",
+        "node": "<B>",
+        "holder": "agent:S1",
+        "source": "observed"
+      }
+    ]
+  },
+  "exit": 0,
+  "reply": {
+    "committed": false,
+    "key": "<key>",
+    "rev": "<rev>",
+    "results": [
+      {
+        "i": 0,
+        "op": "release",
+        "changed": true,
+        "node": "<A>",
+        "claims": [
+          "<setup.3.claim>"
+        ]
+      },
+      {
+        "i": 1,
+        "op": "ref.add",
+        "changed": true,
+        "node": "<B>"
+      },
+      {
+        "i": 2,
+        "op": "claim",
+        "changed": true,
+        "node": "<B>"
+      }
+    ]
+  }
+}

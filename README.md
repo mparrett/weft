@@ -8,9 +8,9 @@
 A durable graph of work — what you're blocked on, what's blocked on you, and how
 any of it connects — shared by humans and the agents working alongside them.
 
-**Status: phase 1 is complete.** Nineteen commands — `add`, `ls`, `link`,
+**Status: phase 1 is complete.** Twenty commands — `add`, `ls`, `link`,
 `unlink`, `ref`, `show`, `claim`, `release`, `done`, `drop`, `why`, `rdeps`,
-`path`, `merge`, `import`, `ns`, `env`, `export`, `view` — against one append-only JSONL log,
+`path`, `merge`, `import`, `ns`, `env`, `export`, `view`, `apply` — against one append-only JSONL log,
 no daemon and no server. Agents start from `weft help agent`, which prints the
 onboarding snippet (`docs/AGENT.md`).
 

@@ -497,6 +497,40 @@ Three rules make this well-defined:
 survivor now owns that work. `created` is **not** merged: it states when that
 node was asserted, and the merged node keeps its own.
 
+### 5.5 Batches
+
+A writer that commits several events as one unit — `weft apply` (SPEC §6.5) —
+frames them so that a reader sees all of them or none.
+
+- Every event of the batch carries `tx`, a string naming the batch, and
+  `tx_op`, an integer naming the request op that produced it. Both are inside
+  the id preimage (§2.1), like any field.
+- The batch ends with one `tx.commit` event: `{"ev": "tx.commit", "tx": …, "n":
+  <events before it>}`, with the usual envelope.
+- **Readers** hold back a run of events sharing a `tx` and apply it, then the
+  marker, only when a `tx.commit` with the same `tx` and an `n` equal to the run's
+  length arrives. A run cut short — at end of file, by an untagged line, by a
+  different `tx`, or by a marker whose `n` disagrees — was never committed and is
+  discarded whole, marker included. A run is contiguous because the batch is
+  appended in one write under the lock (§6).
+- **Writers** truncate a trailing run with no marker under the lock, after the
+  partial-record truncation of §5.3 and before appending.
+
+§5.3 alone is not enough for a batch. It discards a trailing *fragment*, but a
+write torn after its first complete line leaves complete lines behind, and each
+of those is a committed event by §1.1. A move from one node to another would
+keep its release and lose its claim. The marker comes last, rather than a count
+carried on every event, because ids are sealed as each event is built and later
+events of the batch name earlier ones; a count is not known until the batch is.
+
+This is additive under §1.3: `v` stays 1. A reader that predates batches ignores
+the marker kind and the fields, and folds a complete batch correctly. It differs
+only on a torn one, which it applies in part until the next batch-aware writer
+truncates it. An older *writer* recovering after a torn batch truncates only the
+fragment, which leaves the torn run mid-log, where batch-aware readers ignore it
+and older readers apply it. Bumping `v` would have made every older reader
+refuse every log that holds any batch, which is a larger cost than that window.
+
 ## 6. The write protocol
 
 The review's P0: locking only "for the duration of append" does not make a
@@ -508,7 +542,7 @@ had just rejected.
 import — hold an exclusive lock across the whole sequence:
 
 ```
-flock(LOCK_EX) → truncate any partial record → fold → validate → append → fsync → unlock
+flock(LOCK_EX) → truncate any partial record and any torn batch (§5.5) → fold → validate → append → fsync → unlock
 ```
 
 **Mutations that validate nothing** (`node.add`) hold the lock for
@@ -547,6 +581,14 @@ Required from milestone 1:
 - Retraction of unknown target — no-op
 - Partial final record — discarded by the reader, truncated by the writer
 - Corrupt non-final line — hard error
+
+From batches (§5.5):
+
+- A committed batch — applied
+- A batch with no marker at end of file — discarded
+- A batch with no marker, followed by an untagged event — the batch discarded,
+  the event applied
+- A marker whose `n` disagrees with its run — the run discarded
 Canonicalization vectors — unicode escapes, key ordering, integer forms — are
 pinned as unit tests in `internal/event`, not as fixtures: they are assertions
 about the *preimage bytes* (§2.1), which a folded-graph expectation cannot

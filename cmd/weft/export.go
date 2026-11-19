@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"time"
+
 	"flag"
 	"fmt"
+	"github.com/mparrett/weft/internal/event"
 	"github.com/mparrett/weft/internal/graph"
 	"github.com/mparrett/weft/internal/render"
 	"github.com/mparrett/weft/internal/store"
@@ -65,10 +68,17 @@ func cmdExport(e *env, args []string) int {
 	if err != nil {
 		return fail(e, exitStore, *asJSON, err)
 	}
-	g, err := graph.Fold(st.Fold)
+	// FoldRev reads once for both, so the rev names exactly the state exported.
+	var rev string
+	g, err := graph.Fold(func(apply func(event.Event) error) error {
+		var err error
+		rev, err = st.FoldRev(apply)
+		return err
+	})
 	if err != nil {
 		return fail(e, storeExitCode(err), *asJSON, err)
 	}
+	in.revValue = rev
 
 	nodes := g.Ordered()
 	edges := sortedEdges(g, nodes)
@@ -160,13 +170,17 @@ type exportNodeJSON struct {
 // layout or timeline consumer orders by; observed_at says how much to trust
 // them, never where to place the node (SPEC.md §6.4).
 type exportRefJSON struct {
-	Ref              string `json:"ref"`
-	ObservedAt       string `json:"observed_at,omitempty"`
-	UpstreamState    string `json:"upstream_state,omitempty"`
-	UpstreamTitle    string `json:"upstream_title,omitempty"`
-	UpstreamCreated  string `json:"upstream_created,omitempty"`
-	UpstreamModified string `json:"upstream_modified,omitempty"`
-	UpstreamHash     string `json:"upstream_hash,omitempty"`
+	Ref string `json:"ref"`
+	// Bindings, under --include bindings: every live ref.add asserting this
+	// ref, oldest first. The provenance of a binding is not the node's, and a
+	// ref added by a sync job is a different claim from one a person typed.
+	Bindings         []exportBindingJSON `json:"bindings,omitempty"`
+	ObservedAt       string              `json:"observed_at,omitempty"`
+	UpstreamState    string              `json:"upstream_state,omitempty"`
+	UpstreamTitle    string              `json:"upstream_title,omitempty"`
+	UpstreamCreated  string              `json:"upstream_created,omitempty"`
+	UpstreamModified string              `json:"upstream_modified,omitempty"`
+	UpstreamHash     string              `json:"upstream_hash,omitempty"`
 }
 
 // exportClaimJSON is one unreleased claim. Expired ones are included and dated
@@ -177,6 +191,9 @@ type exportRefJSON struct {
 // recording that a colleague seems to be on something is the motivating case,
 // and it is exactly the claim a reader must be able to discount.
 type exportClaimJSON struct {
+	// ID, under --include ids, is the claim.add id: what `weft apply`'s
+	// release-by-claim and claims expectation key on.
+	ID      string `json:"id,omitempty"`
 	Holder  string `json:"holder"`
 	By      string `json:"by,omitempty"`
 	Source  string `json:"source,omitempty"`
@@ -188,6 +205,16 @@ type exportClaimJSON struct {
 	ReleasedAt     string `json:"released_at,omitempty"`
 	ReleasedBy     string `json:"released_by,omitempty"`
 	ReleasedSource string `json:"released_source,omitempty"`
+	// Live, under --include live, on unreleased claims only: whether the claim
+	// is unexpired as of the export. A pointer so false still prints.
+	Live *bool `json:"live,omitempty"`
+}
+
+type exportBindingJSON struct {
+	ID     string `json:"id"`
+	By     string `json:"by,omitempty"`
+	Source string `json:"source,omitempty"`
+	At     string `json:"at,omitempty"`
 }
 
 // claimJSON is the one mapping both arrays use, so claims and released_claims
@@ -203,6 +230,7 @@ func claimJSON(c *graph.Claim) exportClaimJSON {
 }
 
 type exportEdgeJSON struct {
+	ID     string `json:"id,omitempty"` // under --include ids
 	Kind   string `json:"kind"`
 	From   string `json:"from"`
 	To     string `json:"to"`
@@ -220,9 +248,21 @@ type include struct {
 	claims bool
 	source bool
 	refs   bool
+
+	// The machine sections, for writers that read a snapshot and commit
+	// against it with `weft apply`. They are never part of `all`: `all` is what
+	// `weft view` embeds, and rev and live change on every write and every
+	// tick, which would make an unchanged graph render differently.
+	rev      bool
+	ids      bool
+	live     bool
+	bindings bool
+	aliases  bool
+
+	revValue string // filled by cmdExport, not by parsing
 }
 
-var includeSections = []string{"claims", "source", "refs"}
+var includeSections = []string{"claims", "source", "refs", "rev", "ids", "live", "bindings", "aliases"}
 
 // includeAll is every section. Shared with `weft view`, whose page promises the
 // full export: a section added here reaches both, or neither.
@@ -241,6 +281,16 @@ func parseInclude(spec string) (include, error) {
 			in.source = true
 		case "refs":
 			in.refs = true
+		case "rev":
+			in.rev = true
+		case "ids":
+			in.ids = true
+		case "live":
+			in.live = true
+		case "bindings":
+			in.bindings = true
+		case "aliases":
+			in.aliases = true
 		case "all":
 			in = includeAll
 		default:
@@ -253,12 +303,22 @@ func parseInclude(spec string) (include, error) {
 
 func exportJSON(e *env, g *graph.Graph, nodes []*graph.Node, edges []*graph.Edge, in include) error {
 	out := struct {
-		Nodes []exportNodeJSON `json:"nodes"`
-		Edges []exportEdgeJSON `json:"edges"`
+		Rev     string             `json:"rev,omitempty"`
+		Nodes   []exportNodeJSON   `json:"nodes"`
+		Edges   []exportEdgeJSON   `json:"edges"`
+		Aliases *map[string]string `json:"aliases,omitempty"` // a pointer so a requested empty map prints {}
 	}{
 		Nodes: make([]exportNodeJSON, 0, len(nodes)),
 		Edges: make([]exportEdgeJSON, 0, len(edges)),
 	}
+	if in.rev {
+		out.Rev = in.revValue
+	}
+	if in.aliases {
+		aliases := g.Aliases()
+		out.Aliases = &aliases
+	}
+	now := time.Now()
 	for _, n := range nodes {
 		refs := append([]string(nil), n.Refs...)
 		sort.Strings(refs)
@@ -270,7 +330,7 @@ func exportJSON(e *env, g *graph.Graph, nodes []*graph.Node, edges []*graph.Edge
 			node.By, node.Source = n.By, n.Source
 		}
 		for _, r := range refs {
-			if !in.refs {
+			if !in.refs && !in.bindings {
 				node.Refs = append(node.Refs, r)
 				continue
 			}
@@ -278,7 +338,7 @@ func exportJSON(e *env, g *graph.Graph, nodes []*graph.Node, edges []*graph.Edge
 			// A ref nobody has ever looked at carries no observation, and says
 			// so by omission rather than by an empty state that would read as
 			// "upstream reported nothing".
-			if o := g.Observed(n.ID, r); o != nil {
+			if o := g.Observed(n.ID, r); in.refs && o != nil {
 				obj.ObservedAt = render.Stamp(o.At)
 				obj.UpstreamState = o.State
 				obj.UpstreamTitle = o.Title
@@ -286,20 +346,41 @@ func exportJSON(e *env, g *graph.Graph, nodes []*graph.Node, edges []*graph.Edge
 				obj.UpstreamModified = o.Modified
 				obj.UpstreamHash = o.Hash
 			}
+			if in.bindings {
+				for _, b := range g.Bindings(n.ID, r) {
+					obj.Bindings = append(obj.Bindings, exportBindingJSON{
+						ID: b.ID, By: b.By, Source: b.Source, At: render.Stamp(b.At)})
+				}
+			}
 			node.Refs = append(node.Refs, obj)
 		}
 		if in.claims {
 			for _, c := range g.ClaimsFor(n.ID) {
-				node.Claims = append(node.Claims, claimJSON(c))
+				cj := claimJSON(c)
+				if in.ids {
+					cj.ID = c.ID
+				}
+				if in.live {
+					live := c.Live(now)
+					cj.Live = &live
+				}
+				node.Claims = append(node.Claims, cj)
 			}
 			for _, c := range g.ReleasedClaimsFor(n.ID) {
-				node.ReleasedClaims = append(node.ReleasedClaims, claimJSON(c))
+				cj := claimJSON(c)
+				if in.ids {
+					cj.ID = c.ID
+				}
+				node.ReleasedClaims = append(node.ReleasedClaims, cj)
 			}
 		}
 		out.Nodes = append(out.Nodes, node)
 	}
 	for _, ed := range edges {
 		edge := exportEdgeJSON{Kind: ed.Kind, From: ed.From, To: ed.To}
+		if in.ids {
+			edge.ID = ed.ID
+		}
 		if in.source {
 			edge.By, edge.Source, edge.At = ed.By, ed.Source, render.Stamp(ed.At)
 		}
