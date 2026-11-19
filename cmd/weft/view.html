@@ -338,6 +338,7 @@
           <button data-v="ns" aria-pressed="false" title="fill shows namespace; done gets a check mark">ns</button>
           <button data-v="age" aria-pressed="false" title="fill shows how long ago the node was created; stronger is newer">age</button>
           <button data-v="touched" aria-pressed="false" title="fill shows how long since the node last changed; stronger is more recent">touched</button>
+          <button data-v="claims" aria-pressed="false" title="fill shows whether someone holds a live claim, only an expired one, or none">claims</button>
         </div>
       </div>
       <div class="ctl"><span class="ctl-label">theme</span>
@@ -360,6 +361,7 @@
        the namespace, so done moves to a check mark and a paler box. -->
   <span id="legendNSMode" hidden data-help="Fill colour is the namespace group, and each box's first line names it. The groups are the next path segment below whatever every drawn node shares, so the whole store colours by owner, and narrowing to one project's nodes colours by its subspaces. Colours are ranked by size across the whole page, so a search does not repaint them; four colours, then grey for the rest. Dropped, search context and outside-this-page keep the border styles shown in their own entries, drawn in the group's colour."><i class="swatch nsmode"></i> namespace</span>
   <span id="legendTimeMode" hidden data-help="Fill strength is how long ago the node was created (age) or last changed (touched): the stronger the fill, the more recent. Each box's first line gives the time, so the bucket never rests on shade alone. A node never changed after it was created counts its creation as its last change; a stub from outside a scoped page has no dates and is grey."><i class="swatch" style="background:linear-gradient(90deg,var(--active),var(--card2))"></i> recent &rarr; old</span>
+  <span id="legendClaimMode" hidden data-help="Fill shows who is on the work now. Live: someone holds a claim that has not expired, and the box's first line names them (+N when more than one does). Expired: every claim lapsed without a release, which is what abandoned work looks like. Unclaimed: no claim, every claim was released, or the work is done or dropped, since a finished node's leftover claim is not anyone working on it. No claim data: the page does not carry claims for that node, as with a stub from outside a scoped page. Liveness is worked out in your browser against the current time, so an open page goes stale the way a printed one would; reload to recheck. A folded parent shows the most active state among it and its children, naming every live holder."><i class="swatch" style="background:linear-gradient(90deg,var(--active) 0 50%,var(--ns2) 50%)"></i> live / expired claim</span>
   <span id="legendDoneNS" hidden data-help="Finished, in namespace and time colour modes: a paler box, with a check mark before the title."><i class="swatch nsdone"></i> &#x2713; done</span>
   <span class="ns-groups" id="legendNS" hidden></span>
   <span data-help="Decided not to do it, as opposed to finishing it. Kept for history, it stops blocking anything, and it is hidden unless &quot;dropped&quot; is ticked."><i class="swatch dropped"></i> dropped</span>
@@ -922,12 +924,73 @@ const timeHue = (slot, css) => {
   const v = name => css.getPropertyValue(name).trim();
   return slot === "x" ? v("--faint") : mixHex(v("--active"), v("--card2"), TIME_STRENGTH[slot]);
 };
-const hueOf = (prefix, slot, css) => (prefix === "t" ? timeHue : nsHue)(slot, css);
+// Claim colour mode: blue for live, amber for expired, grey for none, and the
+// faintest line colour where the page has no claim data. Two hues a
+// colour-blind reader can still tell apart, and the box names the state too.
+const CLAIM_LABELS = ["live", "expired", "unclaimed"];
+const claimHue = (slot, css) =>
+  css.getPropertyValue(slot === "x" ? "--line" : ["--active", "--ns2", "--faint"][slot]).trim();
+const hueOf = (prefix, slot, css) =>
+  (prefix === "t" ? timeHue : prefix === "c" ? claimHue : nsHue)(slot, css);
 // How much of the hue an open box's fill takes. A namespace hue only has to be
 // told apart from three others, so a light tint does; a time bucket has to be
 // told apart from its neighbours on the same hue, and at the namespace tint the
 // two oldest were indistinguishable on a dark background.
-const fillShare = prefix => (prefix === "t" ? .55 : .22);
+const fillShare = prefix => (prefix === "t" ? .55 : prefix === "c" ? .4 : .22);
+
+// Claims colour mode, in the interface timeGroups gives. Liveness is computed
+// here from `expires` rather than shipped in the export: a page built from an
+// unchanged graph must render identically, and a `live` flag frozen at export
+// time would also be wrong by the time the page is read. The clock is read once
+// per call, as timeGroups does, so a box's fill, its label and the legend
+// count cannot straddle a claim's expiry and disagree.
+//
+// Only open work counts. `weft done` releases nothing, so a finished node's
+// leftover claim would otherwise read as live work or, once it lapsed, as
+// abandoned. A node the page has no claim data for — a stub from outside a
+// scoped page, or any node of a page built from an export without claims —
+// gets its own bucket rather than passing for unclaimed. A folded parent
+// takes the most active state among it and its children, with every live
+// holder among them, for the reason timeGroups gives: a fold hiding someone's
+// live claim must not draw as unclaimed.
+const PAGE_HAS_CLAIMS = DATA.nodes.some(n => "claims" in n || "released_claims" in n);
+function claimGroups(group = new Map()) {
+  const now = Date.now();
+  const isLive = c => !c.expires || Date.parse(c.expires) >= now;
+  const stateOf = n => {
+    if (!PAGE_HAS_CLAIMS || n.external || !n.id) return { rank: 3, live: [] };
+    if (n.state === "done" || n.state === "dropped") return { rank: 2, live: [] };
+    const claims = n.claims || [];
+    const live = claims.filter(isLive);
+    return { rank: live.length ? 0 : claims.length ? 1 : 2, live };
+  };
+  const best = n => {
+    const members = [n, ...(group.get(n.id) || []).map(id => byId.get(id) || {})];
+    const states = members.map(stateOf);
+    // No data on the parent is not outweighed by data on its children, and
+    // vice versa: a known state beats unknown, and the most active known wins.
+    const known = states.filter(s => s.rank < 3);
+    if (!known.length) return { rank: 3, live: [] };
+    return { rank: Math.min(...known.map(s => s.rank)), live: known.flatMap(s => s.live) };
+  };
+  return {
+    prefix: "c",
+    key: n => { const r = best(n).rank; return r === 3 ? "x" : String(r); },
+    slot: k => (k === "x" ? "x" : +k),
+    label: k => (k === "x" ? "no claim data" : CLAIM_LABELS[+k]),
+    // The live holder is what a reader wants from the box; the state word
+    // stands in when nobody is live.
+    boxLabel: n => {
+      const { rank, live } = best(n);
+      if (rank === 0) {
+        const holders = [...new Set(live.map(c => c.holder))];
+        return trunc(holders[0], 28) + (holders.length > 1 ? ` +${holders.length - 1}` : "");
+      }
+      return rank === 3 ? "no claim data" : CLAIM_LABELS[rank];
+    },
+    order: k => (k === "x" ? 3 : +k),
+  };
+}
 
 // The same interface nsGroups gives, so drawing and the legend treat both kinds
 // of colour mode alike. `clock` is "created" or "touched", as in nodeTime.
@@ -969,7 +1032,7 @@ function timeGroups(clock, group = new Map()) {
 // a mermaid node takes one class. State moves off the fill onto the border and
 // the text, which namespace mode leaves free.
 function nsClassDef(cls, css) {
-  const [, prefix, slotStr, variant] = /^([gt])(\d|x)(\w+)$/.exec(cls);
+  const [, prefix, slotStr, variant] = /^([gtc])(\d|x)(\w+)$/.exec(cls);
   const slot = slotStr === "x" ? "x" : +slotStr;
   const v = name => css.getPropertyValue(name).trim();
   const hue = hueOf(prefix, slot, css), surf = v("--card2");
@@ -989,11 +1052,12 @@ function nsClassDef(cls, css) {
 }
 
 function updateColourLegend(byNs, drawn) {
-  const on = !!byNs, time = on && byNs.prefix === "t";
+  const on = !!byNs, time = on && byNs.prefix === "t", claim = on && byNs.prefix === "c";
   for (const id of ["legendOpen", "legendDone"]) document.getElementById(id).hidden = on;
   for (const id of ["legendDoneNS", "legendNS"]) document.getElementById(id).hidden = !on;
-  document.getElementById("legendNSMode").hidden = !on || time;
+  document.getElementById("legendNSMode").hidden = !on || time || claim;
   document.getElementById("legendTimeMode").hidden = !time;
+  document.getElementById("legendClaimMode").hidden = !claim;
   const el = document.getElementById("legendNS");
   if (on) {
     const css = getComputedStyle(document.documentElement);
@@ -1004,8 +1068,9 @@ function updateColourLegend(byNs, drawn) {
       const hue = hueOf(byNs.prefix || "g", slot, css);
       return `<i class="swatch" style="background:${mixHex(hue, surf, fillShare(byNs.prefix || "g"))};border-color:${hue}"></i>`;
     };
-    if (time) {
-      // Every drawn bucket in time order, "no date" last.
+    if (time || claim) {
+      // Every drawn bucket in its own order: time newest first, claims live
+      // first, the no-value bucket last.
       el.innerHTML = [...count.keys()].sort((a, b) => byNs.order(a) - byNs.order(b)).map(k =>
         `<span>${sw(byNs.slot(k))} ${esc(byNs.label(k))} <span class="n">${count.get(k)}</span></span>`).join("");
       if (!document.getElementById("legendHelp").hidden) renderHelp();
@@ -1046,7 +1111,8 @@ function buildDef() {
   const mode = seg("colour");
   const byNs = mode === "ns" ? nsGroups(nodes)
     : mode === "age" ? timeGroups("created", folds.group)
-    : mode === "touched" ? timeGroups("touched", folds.group) : null;
+    : mode === "touched" ? timeGroups("touched", folds.group)
+    : mode === "claims" ? claimGroups(folds.group) : null;
   updateColourLegend(byNs, nodes);
   const nsUsed = new Set();
   for (const n of nodes) {
@@ -1417,7 +1483,7 @@ function applyURLState() {
   // Spelled like the control; `color` is read too, since it is the spelling
   // a hand-typed link most often uses.
   const colour = p.get("colour") || p.get("color");
-  press("colour", ["ns", "age", "touched"].includes(colour) ? colour : "state");
+  press("colour", ["ns", "age", "touched", "claims"].includes(colour) ? colour : "state");
   if (p.get("theme") === "light" || p.get("theme") === "dark") {
     document.documentElement.setAttribute("data-theme", p.get("theme"));
     press("theme", p.get("theme"));
