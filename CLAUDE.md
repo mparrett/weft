@@ -12,7 +12,8 @@ mermaid; `tools/weft-html.py` fills the same template, and
 change to one filler's substitution or scoping has to land in both.
 Observations carry the artifact's own clock (`created`/`modified`) and a
 content hash; `weft ref observe` stats and hashes `file:` refs, and
-`tools/weft-timeline.py` lanes an export by artifact time. The two-clock rule
+`tools/weft-timeline.py` lanes an export by artifact time, as text, mermaid, or
+a self-contained page (`--html`). The two-clock rule
 (SPEC §6.3): the artifact clock is for chronology, `observed at` is for trust,
 and the artifact clock never enters `ls --since`/`--recent`.
 Namespaces resolve from `$WEFT_NS`, a config path mapping, or the git remote.
