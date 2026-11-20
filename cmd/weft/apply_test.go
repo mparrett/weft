@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -483,6 +484,9 @@ func TestApplyUsageErrors(t *testing.T) {
 		"undefined name":    map[string]any{"ops": []any{map[string]any{"op": "done", "node": "$nope"}}},
 		"name in expect":    map[string]any{"expect": []any{map[string]any{"node": "$a", "state": "open"}}, "ops": []any{map[string]any{"op": "add", "as": "$a", "title": "t"}}},
 		"bad expectation":   map[string]any{"expect": []any{map[string]any{"node": "x"}}, "ops": []any{map[string]any{"op": "add", "title": "t"}}},
+		"children $name":    map[string]any{"expect": []any{map[string]any{"node": "x", "children": []any{"$a"}}}, "ops": []any{map[string]any{"op": "add", "as": "$a", "title": "t"}}},
+		"children bad kind": map[string]any{"expect": []any{map[string]any{"node": "x", "children": []any{}, "kind": "parent-of"}}, "ops": []any{map[string]any{"op": "add", "title": "t"}}},
+		"children extra":    map[string]any{"expect": []any{map[string]any{"node": "x", "children": []any{}, "ns": "n"}}, "ops": []any{map[string]any{"op": "add", "title": "t"}}},
 		"two release forms": map[string]any{"ops": []any{map[string]any{"op": "release", "node": "x", "holder": "h", "all": true}}},
 	} {
 		if code, reply := applyIn(t, req); code != exitUsage {
@@ -682,6 +686,7 @@ func TestApplyRefusesNullValues(t *testing.T) {
 		"state":    `{"node":"x","state":null}`,
 		"claims":   `{"node":"x","claims":null}`,
 		"bound_to": `{"ref":"r","bound_to":null}`,
+		"children": `{"node":"x","children":null}`,
 		"node":     `{"node":null,"state":"open"}`,
 		"holder":   `{"holder":null,"live_on":[]}`,
 	} {
@@ -722,5 +727,59 @@ func TestApplyMeIsTheCaller(t *testing.T) {
 	}
 	if on := liveOn(t, "agent:me"); len(on) != 1 || on[0] != b {
 		t.Fatalf("caller is live on %v, want only B", on)
+	}
+}
+
+// children counts live part-of children only: a dropped child no longer
+// decomposes its parent, so it must neither block a close nor be required by
+// one. Other edge kinds are named with kind, and a missing parent reads as
+// {exists: false} like the state expectation.
+func TestApplyChildrenExpectation(t *testing.T) {
+	scratch(t)
+	code, reply := applyIn(t, map[string]any{"ops": []any{
+		map[string]any{"op": "add", "as": "$P", "title": "parent"},
+		map[string]any{"op": "add", "as": "$K", "title": "kept child"},
+		map[string]any{"op": "add", "as": "$D", "title": "dropped child"},
+		map[string]any{"op": "add", "as": "$B", "title": "blocker"},
+		map[string]any{"op": "link", "from": "$K", "kind": "part-of", "to": "$P"},
+		map[string]any{"op": "link", "from": "$D", "kind": "part-of", "to": "$P"},
+		map[string]any{"op": "link", "from": "$B", "kind": "depends-on", "to": "$P"},
+	}})
+	if code != exitOK {
+		t.Fatalf("setup: %v", reply)
+	}
+	id := map[string]string{}
+	for k, v := range reply["tmp"].(map[string]any) {
+		id[k] = v.(string)
+	}
+	if code, _, stderr := session(t, "drop", id["$D"]); code != exitOK {
+		t.Fatalf("drop: %s", stderr)
+	}
+	check := func(x map[string]any) (int, map[string]any) {
+		return applyIn(t, map[string]any{"expect": []any{x}, "ops": []any{map[string]any{"op": "done", "node": id["$P"]}}}, "--dry-run")
+	}
+	for name, c := range map[string]struct {
+		x    map[string]any
+		code int
+	}{
+		"live child holds":      {map[string]any{"node": id["$P"], "children": []any{id["$K"]}}, exitOK},
+		"dropped child counted": {map[string]any{"node": id["$P"], "children": []any{id["$K"], id["$D"]}}, exitConflict},
+		"none":                  {map[string]any{"node": id["$P"], "children": []any{}}, exitConflict},
+		"other kind":            {map[string]any{"node": id["$P"], "children": []any{id["$B"]}, "kind": "depends-on"}, exitOK},
+		"leaf has none":         {map[string]any{"node": id["$K"], "children": []any{}}, exitOK},
+	} {
+		if code, reply := check(c.x); code != c.code {
+			t.Errorf("%s: exit %d, want %d: %v", name, code, c.code, reply)
+		}
+	}
+	code, reply = check(map[string]any{"node": id["$P"], "children": []any{}})
+	got := reply["failed"].([]any)[0].(map[string]any)["actual"]
+	if want := map[string]any{"children": []any{id["$K"]}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("actual = %v, want %v", got, want)
+	}
+	code, reply = check(map[string]any{"node": strings.Repeat("f", 64), "children": []any{}})
+	got = reply["failed"].([]any)[0].(map[string]any)["actual"]
+	if want := map[string]any{"exists": false}; code != exitConflict || !reflect.DeepEqual(got, want) {
+		t.Errorf("missing parent: exit %d, actual %v", code, got)
 	}
 }

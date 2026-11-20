@@ -182,6 +182,10 @@ type applyExpect struct {
 	Kind    *string   `json:"kind"`
 	Ref     *string   `json:"ref"`
 	BoundTo *[]string `json:"bound_to"`
+	// Children shares Kind with live_on: there it scopes nodes by node kind,
+	// here it names the edge kind. The shapes never overlap, so one field
+	// keeps the wire name the caller already sends.
+	Children *[]string `json:"children"`
 
 	raw json.RawMessage
 }
@@ -257,11 +261,26 @@ func parseApplyRequest(raw []byte) (*applyRequest, *applyErr) {
 			}
 		case present["ref"] && present["bound_to"] && len(present) == 2:
 			shape = "bound_to"
+		case present["node"] && present["children"]:
+			shape = "children"
+			for k := range present {
+				if !slices.Contains([]string{"node", "children", "kind"}, k) {
+					shape = ""
+				}
+			}
+			if x.Kind == nil {
+				k := graph.EdgePartOf
+				x.Kind = &k
+			} else if !slices.Contains(validEdgeKinds, *x.Kind) {
+				return nil, usageAt("expect", i, "expectation %d: unknown edge kind %q (want one of: %s)", i, *x.Kind, strings.Join(validEdgeKinds, ", "))
+			}
 		}
 		if shape == "" {
-			return nil, usageAt("expect", i, "expectation %d: want one of {node, state}, {node, claims}, {holder, live_on, ns?, kind?}, {ref, bound_to}", i)
+			return nil, usageAt("expect", i, "expectation %d: want one of {node, state}, {node, claims}, {node, children, kind?}, {holder, live_on, ns?, kind?}, {ref, bound_to}", i)
 		}
-		for _, q := range append(append([]string{deref(x.Node)}, derefs(x.LiveOn)...), derefs(x.BoundTo)...) {
+		names := append([]string{deref(x.Node)}, derefs(x.LiveOn)...)
+		names = append(append(names, derefs(x.BoundTo)...), derefs(x.Children)...)
+		for _, q := range names {
 			if strings.HasPrefix(q, "$") {
 				return nil, usageAt("expect", i, "expectation %d: %q names a node this batch creates; expectations are checked before any op runs", i, q)
 			}
@@ -885,6 +904,39 @@ func checkExpectations(g *graph.Graph, req *applyRequest, rev, by string, now ti
 			}
 			if !sameSet(exp, nodes) {
 				fail(map[string]any{"live_on": actual})
+			}
+
+		case x.Children != nil:
+			n, err := g.Resolve(*x.Node)
+			if err != nil {
+				var nf *graph.ErrNotFound
+				if errors.As(err, &nf) {
+					fail(map[string]bool{"exists": false})
+					continue
+				}
+				return resolveErr(err, &applyErr{expect: &idx})
+			}
+			exp, ae := want(*x.Children)
+			if ae != nil {
+				ae.expect = &idx
+				return ae
+			}
+			// A child points at its parent (child part-of parent), so children
+			// are the far ends of the node's in-edges. A dropped child no
+			// longer decomposes the parent: a close that checks children must
+			// not be blocked by work someone already abandoned.
+			actual := []string{}
+			for _, e := range g.InEdges(n.ID, *x.Kind) {
+				c := e.From
+				if c == n.ID {
+					c = e.To
+				}
+				if cn, err := g.Resolve(c); err == nil && cn.State != event.StateDropped && !slices.Contains(actual, cn.ID) {
+					actual = append(actual, cn.ID)
+				}
+			}
+			if !sameSet(exp, actual) {
+				fail(map[string]any{"children": actual})
 			}
 
 		case x.BoundTo != nil:

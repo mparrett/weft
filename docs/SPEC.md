@@ -780,6 +780,10 @@ conflict:
 - `{node, state}` — the node's state; an unresolvable node fails as
   `{exists: false}`.
 - `{node, claims: [ids]}` — the node's live claim ids are exactly these.
+- `{node, children: [nodes], kind?}` — the node's non-dropped children over
+  `kind` (default `part-of`, so the nodes linked *to* it) are exactly these. A
+  close that checked its tasks' states needs this too: a task linked after the
+  check is not among the ones it named.
 - `{holder, live_on: [nodes], ns?, kind?}` — the nodes where the holder has a
   live claim, within that scope, are exactly these.
 - `{ref, bound_to: [nodes]}` — the non-dropped nodes carrying the ref are
