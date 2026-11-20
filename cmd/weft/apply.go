@@ -268,10 +268,12 @@ func parseApplyRequest(raw []byte) (*applyRequest, *applyErr) {
 					shape = ""
 				}
 			}
-			if x.Kind == nil {
+			switch {
+			case shape == "":
+			case x.Kind == nil:
 				k := graph.EdgePartOf
 				x.Kind = &k
-			} else if !slices.Contains(validEdgeKinds, *x.Kind) {
+			case !slices.Contains(validEdgeKinds, *x.Kind):
 				return nil, usageAt("expect", i, "expectation %d: unknown edge kind %q (want one of: %s)", i, *x.Kind, strings.Join(validEdgeKinds, ", "))
 			}
 		}
