@@ -1,0 +1,118 @@
+{
+  "name": "close-normal-conflict-child",
+  "about": "Normal close after a task was linked late: the children expectation fails and the close writes nothing.",
+  "setup": {
+    "ops": [
+      {
+        "op": "add",
+        "as": "$A",
+        "title": "ws a",
+        "kind": "workstream",
+        "ns": "workstreams",
+        "refs": [
+          "ws:a"
+        ]
+      },
+      {
+        "op": "add",
+        "as": "$T",
+        "title": "finish the thing",
+        "kind": "task",
+        "ns": "demo"
+      },
+      {
+        "op": "link",
+        "from": "$T",
+        "kind": "part-of",
+        "to": "$A"
+      },
+      {
+        "op": "done",
+        "node": "$T"
+      },
+      {
+        "op": "add",
+        "as": "$L",
+        "title": "linked after the check",
+        "kind": "task",
+        "ns": "demo"
+      },
+      {
+        "op": "link",
+        "from": "$L",
+        "kind": "part-of",
+        "to": "$A"
+      }
+    ]
+  },
+  "args": [],
+  "request": {
+    "expect": [
+      {
+        "node": "<A>",
+        "claims": []
+      },
+      {
+        "node": "<A>",
+        "state": "open"
+      },
+      {
+        "node": "<T>",
+        "state": "done"
+      },
+      {
+        "node": "<A>",
+        "children": [
+          "<T>"
+        ]
+      }
+    ],
+    "ops": [
+      {
+        "op": "add",
+        "as": "$note",
+        "title": "closed: shipped",
+        "kind": "note",
+        "ns": "workstreams"
+      },
+      {
+        "op": "link",
+        "from": "$note",
+        "kind": "derived-from",
+        "to": "<A>"
+      },
+      {
+        "op": "done",
+        "node": "$note"
+      },
+      {
+        "op": "done",
+        "node": "<A>"
+      }
+    ]
+  },
+  "exit": 8,
+  "reply": {
+    "error": "precondition failed",
+    "code": 8,
+    "committed": false,
+    "rev": "<rev>",
+    "failed": [
+      {
+        "i": 3,
+        "expect": {
+          "node": "<A>",
+          "children": [
+            "<T>"
+          ]
+        },
+        "actual": {
+          "children": [
+            "<T>",
+            "<L>"
+          ]
+        }
+      }
+    ]
+  }
+}
